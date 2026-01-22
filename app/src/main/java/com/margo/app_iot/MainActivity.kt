@@ -9,7 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
 import com.margo.app_iot.ui.auth.AuthRoot
@@ -68,6 +67,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val session = remember { SessionStore(this) }
 
+
                 // TODO: ВСТАВЬ СВОЙ URL СЕРВЕРА:
                 // пример: "http://10.0.2.2:8080" (если сервер на ПК и запускаешь эмулятор)
                 // или "http://192.168.0.10:8080" (если сервер в локальной сети)
@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
                 val loggedIn by session.loggedInFlow.collectAsState(initial = false)
                 val role by session.roleFlow.collectAsState(initial = "")
+                val username by session.usernameFlow.collectAsState(initial = "")
 
                 val scope = rememberCoroutineScope()
 

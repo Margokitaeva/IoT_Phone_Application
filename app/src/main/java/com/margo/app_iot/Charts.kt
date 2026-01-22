@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import kotlin.collections.plus
 import kotlin.collections.takeLast
-import kotlinx.coroutines.delay
 
 @Composable
 fun VisualizationScreen(

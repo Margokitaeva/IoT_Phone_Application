@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.dp
 fun BleConnectScreen(
     modifier: Modifier = Modifier,
     onRequestPermissions: () -> Unit,
+    onAddDevice: () -> Unit,
+    onDeleteDevice: () -> Unit,
     devices: List<ScanResult>,
     onDeviceSelected: (ScanResult) -> Unit,
     isConnected: Boolean,
@@ -23,6 +25,25 @@ fun BleConnectScreen(
             .padding(16.dp)
             .fillMaxSize()
     ) {
+
+        OutlinedButton(
+            onClick = onAddDevice,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Add device")
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onDeleteDevice,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Delete device")
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         Button(
             onClick = onRequestPermissions,
             modifier = Modifier.fillMaxWidth()
@@ -99,9 +120,10 @@ fun ConfigScreen(
 
     var ssid by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var cfgA by remember { mutableStateOf("") }
-    var cfgB by remember { mutableStateOf("") }
+    var experimentName by remember { mutableStateOf("") }
+//    var cfgB by remember { mutableStateOf("") }
     var isLedEnabled by remember { mutableStateOf(false) }
+    var samplingMs by remember { mutableStateOf("") }
 
     LazyColumn(modifier = modifier.padding(16.dp)) {
 
@@ -155,18 +177,18 @@ fun ConfigScreen(
 
         item {
             OutlinedTextField(
-                value = cfgA,
-                onValueChange = { cfgA = it },
-                label = { Text("paramA") },
+                value = experimentName,
+                onValueChange = { experimentName = it },
+                label = { Text("Experiment name") },
                 modifier = Modifier.fillMaxWidth()
             )
         }
 
         item {
             OutlinedTextField(
-                value = cfgB,
-                onValueChange = { cfgB = it },
-                label = { Text("paramB") },
+                value = samplingMs,
+                onValueChange = { samplingMs = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Sampling interval (ms)") },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -177,8 +199,8 @@ fun ConfigScreen(
                     onApplyConfig(
                         linkedMapOf(
                             "isLedEnabled" to if (isLedEnabled) "1" else "0",
-                            "paramA" to cfgA,
-                            "paramB" to cfgB
+                            "experimentName" to experimentName,
+                            "samplingMs" to samplingMs
                         )
                     )
                 },

@@ -6,13 +6,11 @@ plugins {
 
 android {
     namespace = "com.margo.app_iot"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36 // Corrected line
 
     defaultConfig {
         applicationId = "com.margo.app_iot"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

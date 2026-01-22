@@ -37,7 +37,7 @@ private fun LoginScreen(
 
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var role by remember { mutableStateOf("patient") } // patient/doctor
+//    var role by remember { mutableStateOf("patient") } // patient/doctor
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
@@ -45,7 +45,7 @@ private fun LoginScreen(
         Text("Login", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(14.dp))
 
-        RolePicker(role = role, onRoleChange = { role = it })
+//        RolePicker(role = role, onRoleChange = { role = it })
 
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(username, { username = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
@@ -70,10 +70,21 @@ private fun LoginScreen(
                 error = null
                 loading = true
                 scope.launch {
-                    val res = api.login(role = role, username = username, password = password)
+                    val u = username.trim()
+                    val res = api.login(username = u, password = password)
                     loading = false
+
                     if (res.isSuccess) {
-                        session.setLoggedIn(username.trim(), role)
+                        val roleFromServer = res.getOrNull()!!.role
+                        session.setLoggedIn(u, roleFromServer)
+
+                        if (roleFromServer == "patient") {
+                            val devRes = api.patientGetDeviceId(u)
+                            session.setDeviceId(devRes.getOrNull().orEmpty())
+                        } else {
+                            session.setDeviceId("")
+                        }
+
                         onAuthed()
                     } else {
                         error = res.exceptionOrNull()?.message ?: "Login failed"
@@ -163,7 +174,7 @@ private fun SignUpScreen(
                     }
 
                     // login right after register
-                    val log = api.login(role, username.trim(), password)
+                    val log = api.login(username.trim(), password)
                     loading = false
                     if (log.isSuccess) {
                         session.setLoggedIn(username.trim(), role)

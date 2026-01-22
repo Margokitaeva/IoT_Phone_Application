@@ -25,8 +25,8 @@ class BleManager(
     // ===== Config =====
     private val CONFIG_SERVICE_UUID = shortUuid(0xFFF4)
     private val LED_ENABLE_CHAR_UUID = shortUuid(0xFF12)
-    private val CFG_A_CHAR_UUID      = shortUuid(0xFFF5)
-    private val CFG_B_CHAR_UUID      = shortUuid(0xFFF6)
+    private val EXP_NAME_CHAR_UUID      = shortUuid(0xFFF5)
+    private val SAMPLING_MS_CHAR_UUID      = shortUuid(0xFFF6)
     private val CONFIG_APPLY_CHAR_UUID = shortUuid(0xFFF7)
 
     // data
@@ -131,8 +131,8 @@ class BleManager(
 
         val uuidMap = mapOf(
             "isLedEnabled" to LED_ENABLE_CHAR_UUID,
-            "paramA" to CFG_A_CHAR_UUID,
-            "paramB" to CFG_B_CHAR_UUID
+            "experimentName" to EXP_NAME_CHAR_UUID,
+            "samplingMs" to SAMPLING_MS_CHAR_UUID
         )
 
         writeQueue.clear()

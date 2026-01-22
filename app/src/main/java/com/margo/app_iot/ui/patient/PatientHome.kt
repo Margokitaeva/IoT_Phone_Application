@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.BleManager
+import com.margo.app_iot.ExperimentDataResponse
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
 import com.margo.app_iot.VisualizationScreen
@@ -60,12 +61,15 @@ fun PatientHome(
         Box(Modifier.padding(padding)) {
             when (tab) {
                 PatientTab.Ble -> PatientBleTab(
+                    api = api,
+                    session = session,
                     permissionLauncher = permissionLauncher,
                     blePermissions = blePermissions,
                     devices = devices,
                     onConnect = { bleManager.connect(it.device) },
                     isConnected = isConnected,
-                    connectedDeviceName = connectedDeviceName
+                    connectedDeviceName = connectedDeviceName,
+                    bleManager = bleManager
                 )
 
                 PatientTab.Config -> PatientConfigTab(
@@ -84,7 +88,10 @@ fun PatientHome(
                     session = session
                 )
 
-                PatientTab.Model3D -> Placeholder3DTab()
+                PatientTab.Model3D -> PatientExperiments3DTab(
+                    api = api,
+                    session = session
+                )
             }
         }
     }
@@ -100,22 +107,151 @@ private enum class PatientTab(val icon: androidx.compose.ui.graphics.vector.Imag
 
 @Composable
 private fun PatientBleTab(
+    api: ApiClient,
+    session: SessionStore,
     permissionLauncher: ActivityResultLauncher<Array<String>>,
     blePermissions: Array<String>,
     devices: List<ScanResult>,
     onConnect: (ScanResult) -> Unit,
     isConnected: Boolean,
-    connectedDeviceName: String?
+    connectedDeviceName: String?,
+    bleManager: BleManager
 ) {
+    val scope = rememberCoroutineScope()
+    val username by session.usernameFlow.collectAsState(initial = "")
+    val deviceId by session.deviceIdFlow.collectAsState(initial = "")
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var addDeviceId by remember { mutableStateOf("") }
+    var addError by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+
     // твой текущий экран Connect — просто вынесла
     com.margo.app_iot.BleConnectScreen(
         modifier = Modifier.fillMaxSize(),
         onRequestPermissions = { permissionLauncher.launch(blePermissions) },
         devices = devices,
+        onAddDevice = {
+            addDeviceId = ""
+            addError = null
+            showAddDialog = true
+        },
+        onDeleteDevice = {
+            deleteError = null
+            if (deviceId.isBlank()) {
+                deleteError = "No device linked. Add a device first."
+            } else {
+                showDeleteConfirm = true
+            }
+        },
         onDeviceSelected = onConnect,
         isConnected = isConnected,
         connectedDeviceName = connectedDeviceName
     )
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!adding) showAddDialog = false },
+            title = { Text("Add device") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = addDeviceId,
+                        onValueChange = { addDeviceId = it },
+                        label = { Text("DeviceID") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (addError != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(addError!!, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !adding && addDeviceId.isNotBlank() && username.isNotBlank(),
+                    onClick = {
+                        adding = true
+                        addError = null
+
+                        scope.launch {
+                            val res = api.patientAddDevice(
+                                username = username,
+                                deviceId = addDeviceId.trim()
+                            )
+
+                            adding = false
+
+                            if (res.isSuccess) {
+                                session.setDeviceId(addDeviceId.trim())
+                                showAddDialog = false
+                            } else {
+                                val msg = res.exceptionOrNull()?.message.orEmpty()
+                                addError =
+                                    if (msg.contains("DEVICE_ALREADY_EXISTS")) {
+                                        "You already have a device. Delete it first, then add a new one."
+                                    } else {
+                                        "Failed to add device: $msg"
+                                    }
+                            }
+                        }
+                    }
+                ) { Text(if (adding) "Adding..." else "Confirm") }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    enabled = !adding,
+                    onClick = { showAddDialog = false }
+                ) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!deleting) showDeleteConfirm = false },
+            title = { Text("Delete device?") },
+            text = { Text("Are you sure you want to delete this device from your account?") },
+            confirmButton = {
+                Button(
+                    enabled = !deleting,
+                    onClick = {
+                        deleting = true
+                        scope.launch {
+                            val res = api.patientDeleteDevice(
+                                patientName = username,
+                                deviceId = deviceId.trim()
+                            )
+                            deleting = false
+
+                            if (res.isSuccess) {
+                                session.clearDeviceId()
+//                                bleManager.deleteDevice()
+                                showDeleteConfirm = false
+                            } else {
+                                deleteError = res.exceptionOrNull()?.message ?: "Delete failed"
+                                showDeleteConfirm = false
+                            }
+                        }
+                    }
+                ) { Text(if (deleting) "Deleting..." else "Delete") }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    enabled = !deleting,
+                    onClick = { showDeleteConfirm = false }
+                ) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (deleteError != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(deleteError!!, color = MaterialTheme.colorScheme.error)
+    }
 }
 
 @Composable
@@ -183,11 +319,147 @@ private fun PatientHistoryTab(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Placeholder3DTab() {
+private fun PatientExperiments3DTab(
+    api: ApiClient,
+    session: SessionStore
+) {
+    val scope = rememberCoroutineScope()
+    val username by session.usernameFlow.collectAsState(initial = "")
+
+    var experiments by remember { mutableStateOf(listOf<String>()) }
+    var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf<String?>(null) }
+
+    var loadingList by remember { mutableStateOf(false) }
+    var loadingData by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    var lastLoaded by remember { mutableStateOf<ExperimentDataResponse?>(null) }
+
+    val filtered = remember(experiments, query) {
+        if (query.isBlank()) experiments
+        else experiments.filter { it.contains(query, ignoreCase = true) }
+    }
+
+    fun loadExperiments() {
+        if (username.isBlank()) return
+        loadingList = true
+        error = null
+        scope.launch {
+            val res = api.patientGetExperiments(username)
+            loadingList = false
+            if (res.isSuccess) {
+                experiments = res.getOrNull().orEmpty()
+            } else {
+                error = res.exceptionOrNull()?.message ?: "Failed to load experiments"
+            }
+        }
+    }
+
+    LaunchedEffect(username) {
+        if (username.isNotBlank()) loadExperiments()
+    }
+
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("3D Model", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(10.dp))
-        Text("TODO: 3D model screen placeholder. We'll add rendering later.")
+
+        if (username.isBlank()) {
+            Text("Loading user...", color = MaterialTheme.colorScheme.tertiary)
+            return@Column
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Experiment", style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = { loadExperiments() }) {
+                Text(if (loadingList) "..." else "Refresh")
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded }
+        ) {
+            OutlinedTextField(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+                value = query,
+                onValueChange = {
+                    query = it
+                    expanded = true
+                },
+                label = { Text("Search / select experiment") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+            )
+
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                filtered.forEach { exp ->
+                    DropdownMenuItem(
+                        text = { Text(exp) },
+                        onClick = {
+                            selected = exp
+                            query = exp
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = {
+                val expId = selected ?: return@Button
+                loadingData = true
+                error = null
+                scope.launch {
+                    val res = api.patientGetExperimentData(username, expId)
+                    loadingData = false
+                    if (res.isSuccess) {
+                        lastLoaded = res.getOrNull()
+                        // TODO: start 3D simulation rendering here (later)
+                    } else {
+                        error = res.exceptionOrNull()?.message ?: "Failed to load experiment data"
+                    }
+                }
+            },
+            enabled = selected != null && !loadingData,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (loadingData) "Loading..." else "Show simulation")
+        }
+
+        if (error != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(error!!, color = MaterialTheme.colorScheme.error)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // заглушка с фактом получения данных
+        val data = lastLoaded
+        if (data == null) {
+            Text("Simulation placeholder (TODO)", style = MaterialTheme.typography.titleMedium)
+            Text("Select an experiment and press “Show simulation”.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text("Loaded experiment data:", style = MaterialTheme.typography.titleMedium)
+//            Text("deviceID: ${data.deviceID}", style = MaterialTheme.typography.bodyMedium)
+//            Text("timestamp: ${data.timestamp}", style = MaterialTheme.typography.bodyMedium)
+//            Text("frames: ${data.mpuProcessedData.size}", style = MaterialTheme.typography.bodyMedium)
+
+            Spacer(Modifier.height(10.dp))
+            Text("3D rendering TODO: we will draw cylinders / stick model later.", style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
+
