@@ -48,21 +48,21 @@ fun VisualizationScreen(
     }
 
     // odbieranie co jakis czas
-    LaunchedEffect(isConnected) {
-        if (!isConnected) return@LaunchedEffect
-
-        while (true) {
-            bleManager.readQuaternionOnce()
-            delay(1000) // jak czesto
-        }
-    }
-
-    // po notyfikacji
 //    LaunchedEffect(isConnected) {
-//        if (isConnected) {
-//            bleManager.enableQuaternionNotifications()
+//        if (!isConnected) return@LaunchedEffect
+//
+//        while (true) {
+//            bleManager.readQuaternionOnce()
+//            delay(1000) // jak czesto
 //        }
 //    }
+
+    // po notyfikacji
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            bleManager.enableQuaternionNotifications()
+        }
+    }
 
     Column(modifier = modifier.padding(16.dp)) {
         Text("Quaternion", style = MaterialTheme.typography.headlineSmall)
@@ -111,7 +111,7 @@ fun QuaternionChart(
             return paddingLeft + chartWidth * index / (samples.size - 1)
         }
 
-        /* ---------- СЕТКА ---------- */
+        /* ---------- GRID ---------- */
 
         val gridLines = 4
         val gridColor = androidx.compose.ui.graphics.Color.LightGray.copy(alpha = 0.5f)
@@ -136,7 +136,7 @@ fun QuaternionChart(
             )
         }
 
-        /* ---------- ОСИ ---------- */
+        /* ---------- AXES ---------- */
 
         val axisColor = androidx.compose.ui.graphics.Color.Black
 
@@ -156,7 +156,7 @@ fun QuaternionChart(
             strokeWidth = 2f
         )
 
-        /* ---------- ПОДПИСИ ПО Y ---------- */
+        /* ---------- LABEL ON Y ---------- */
 
         val textPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.BLACK
@@ -175,7 +175,7 @@ fun QuaternionChart(
             )
         }
 
-        /* ---------- ЛИНИИ КВАТЕРНИОНА ---------- */
+        /* ---------- QUATERNIONS LINES ---------- */
 
         fun drawSignal(
             values: List<Float>,

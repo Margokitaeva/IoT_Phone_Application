@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- IP твоего сервера -->
+        <domain includeSubdomains="false">10.163.136.28</domain>
+    </domain-config>
+</network-security-config>
