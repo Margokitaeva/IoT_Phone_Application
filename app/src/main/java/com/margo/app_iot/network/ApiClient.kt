@@ -191,279 +191,8 @@ class ApiClient(
 
 
 
-    // -------- PATIENT --------
-
-    suspend fun patientAddDevice(username: String, deviceId: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val body = JSONObject()
-                    .put("Username", username)
-                    .put("DeviceID", deviceId)
-                    .toString()
-
-                val req = Request.Builder()
-                    .url("$baseUrl/patient/addDevice")
-                    .post(body.toRequestBody(jsonType))
-                    .build()
-
-                http.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) return@use
-
-                    if (resp.code == 400) {
-                        throw IllegalStateException("DEVICE_ALREADY_EXISTS")
-                    }
-
-                    throw IllegalStateException("HTTP ${resp.code} ${resp.body?.string().orEmpty()}")
-                }
-            }.map { Unit }
-        }
-
-    suspend fun patientGetDeviceId(username: String): Result<String> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder()
-                    .url("$baseUrl/getDevice/$username")
-                    .get()
-                    .build()
-
-                http.newCall(req).execute().use { resp ->
-                    val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
-
-                    val json = JSONObject(text)
-                    json.getString("deviceID")
-                }
-            }
-        }
-
-    suspend fun patientDeleteDevice(patientName: String, deviceId: String): Result<String> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val body = JSONObject()
-                    .put("DeviceID", deviceId)
-                    .put("patientName", patientName)
-                    .toString()
-
-                val req = Request.Builder()
-                    .url("$baseUrl/patient/deleteDevice")
-                    .delete(body.toRequestBody(jsonType))
-                    .build()
-
-                http.newCall(req).execute().use { resp ->
-                    val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
-
-                    // сервер: { "data": "..." }
-                    val json = JSONObject(text)
-                    json.optString("data", text)
-                }
-            }
-        }
-
-
-//    suspend fun patientAddDevice(username: String, deviceId: String): Result<Unit> =
-//        withContext(Dispatchers.IO) {
-//            val body = JSONObject()
-//                .put("Username", username)
-//                .put("DeviceID", deviceId)
-//                .toString()
-//
-//            postNoBody("$baseUrl/patient/addDevice", body, okCodes = setOf(200), err400 = "Bad request")
-//        }
-
-    suspend fun patientGetComment(username: String): Result<String> =
-        withContext(Dispatchers.IO) {
-            val req = Request.Builder()
-                .url("$baseUrl/patient/getComment/$username")
-                .get()
-                .build()
-
-            runCatching {
-                http.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                    val text = resp.body?.string().orEmpty()
-                    val json = JSONObject(text)
-                    json.optString("comment", "")
-                }
-            }
-        }
-
-    suspend fun patientGetData(username: String): Result<PatientDataResponse> =
-        withContext(Dispatchers.IO) {
-            val req = Request.Builder()
-                .url("$baseUrl/patient/getData/$username")
-                .get()
-                .build()
-
-            runCatching {
-                http.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                    val text = resp.body?.string().orEmpty()
-                    val json = JSONObject(text)
-
-                    val ts = json.optLong("timestamp", 0L)
-                    val arr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
-
-                    // mpuProcessedData: [ [4 floats], [4 floats], ... ]
-                    val batches = mutableListOf<List<Float>>()
-                    for (i in 0 until arr.length()) {
-                        val inner = arr.getJSONArray(i)
-                        val one = mutableListOf<Float>()
-                        for (j in 0 until inner.length()) {
-                            one.add(inner.getDouble(j).toFloat())
-                        }
-                        batches.add(one)
-                    }
-
-                    PatientDataResponse(timestamp = ts, mpuProcessedData = batches)
-                }
-            }
-        }
-
-    suspend fun patientGetExperiments(username: String): Result<List<String>> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder()
-                    .url("$baseUrl/patient/getExperiments/$username")
-                    .get()
-                    .build()
-
-                val resp = http.newCall(req).execute()
-                if (!resp.isSuccessful) error("HTTP ${resp.code}")
-
-                val body = resp.body?.string().orEmpty()
-                val json = JSONObject(body)
-                val arr = json.optJSONArray("experiments") ?: JSONArray()
-
-                buildList {
-                    for (i in 0 until arr.length()) add(arr.getString(i))
-                }
-            }
-        }
-
-    suspend fun patientGetExperimentData(username: String, experimentId: String): Result<ExperimentDataResponse> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder()
-                    .url("$baseUrl/patient/getExperimentData/$username/$experimentId")
-                    .get()
-                    .build()
-
-                val resp = http.newCall(req).execute()
-                if (!resp.isSuccessful) error("HTTP ${resp.code}")
-
-                val body = resp.body?.string().orEmpty()
-                val json = JSONObject(body)
-
-                val deviceId = json.optString("deviceID")
-                val timestamp = json.optLong("timestamp", 0L)
-
-                val mpuArr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
-                val mpuProcessedData = buildList {
-                    for (i in 0 until mpuArr.length()) {
-                        val row = mpuArr.getJSONArray(i)
-                        add(
-                            listOf(
-                                row.getDouble(0).toFloat(),
-                                row.getDouble(1).toFloat(),
-                                row.getDouble(2).toFloat(),
-                                row.getDouble(3).toFloat()
-                            )
-                        )
-                    }
-                }
-
-                ExperimentDataResponse(
-                    experimentId = experimentId,
-                    deviceID = deviceId,
-                    timestamp = timestamp,
-                    mpuProcessedData = mpuProcessedData
-                )
-            }
-        }
-
-    suspend fun patientGetExperimentsInfo(username: String): Result<List<ExperimentInfo>> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder()
-                    .url("$baseUrl/patient/getExperimentsInfo/$username")
-                    .get()
-                    .build()
-
-                http.newCall(req).execute().use { resp ->
-                    val body = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $body")
-
-                    val json = JSONObject(body)
-                    val arr = json.optJSONArray("experiments") ?: JSONArray()
-
-                    buildList {
-                        for (i in 0 until arr.length()) {
-                            val o = arr.getJSONObject(i)
-
-                            add(
-                                ExperimentInfo(
-                                    experimentID = o.optString("experimentID"),
-
-                                    hipRomLeft = o.optDoubleOrNull("hip_rom_left"),
-                                    hipRomRight = o.optDoubleOrNull("hip_rom_right"),
-                                    kneeRomLeft = o.optDoubleOrNull("knee_rom_left"),
-                                    kneeRomRight = o.optDoubleOrNull("knee_rom_right"),
-
-                                    cadenceEst = o.optDoubleOrNull("cadence_est"),
-                                    symmetryIndex = o.optDoubleOrNull("symmetry_index"),
-
-                                    pelvisPitchRom = o.optDoubleOrNull("pelvis_pitch_rom"),
-                                    pelvisRollRom = o.optDoubleOrNull("pelvis_roll_rom")
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-    suspend fun patientGetPatResult(username: String, experimentId: String): Result<PatResult> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder()
-                    .url("$baseUrl/getPatResult/$username/$experimentId")
-                    .get()
-                    .build()
-
-                http.newCall(req).execute().use { resp ->
-                    val body = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $body")
-
-                    val json = JSONObject(body)
-
-                    PatResult(
-                        patientId = json.optString("patientId").ifBlank { null },
-                        updatedAt = json.optString("updatedAt").ifBlank { null },
-
-                        hipRomLeft = json.optDoubleOrNull("hipRomLeft"),
-                        hipRomRight = json.optDoubleOrNull("hipRomRight"),
-                        kneeRomLeft = json.optDoubleOrNull("kneeRomLeft"),
-                        kneeRomRight = json.optDoubleOrNull("kneeRomRight"),
-
-                        cadenceEst = json.optDoubleOrNull("cadenceEst"),
-                        symmetryIndex = json.optDoubleOrNull("symmetryIndex"),
-
-                        pelvisPitchRom = json.optDoubleOrNull("pelvisPitchRom"),
-                        pelvisRollRom = json.optDoubleOrNull("pelvisRollRom")
-                    )
-                }
-            }
-        }
-
-
-    // helper: чтобы нормально обрабатывать null/отсутствие поля
-    private fun JSONObject.optDoubleOrNull(key: String): Double? {
-        return if (has(key) && !isNull(key)) optDouble(key) else null
-    }
-
-
     // -------- PAIRING --------
+
     suspend fun getDeviceByUserId(userId: String, accessToken: String): Result<UserDevicePair?> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -495,7 +224,6 @@ class ApiClient(
                 }
             }
         }
-
 
     suspend fun putDeviceByUserId(userId: String, deviceId: String, accessToken: String): Result<UserDevicePair> =
         withContext(Dispatchers.IO) {
@@ -529,14 +257,31 @@ class ApiClient(
             }
         }
 
+    suspend fun deleteDeviceByUserId(userId: String, accessToken: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/users/$userId/device")
+                    .delete()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    if (resp.code == 204) return@use
+                    val text = resp.body?.string().orEmpty()
+                    throw ApiHttpException(resp.code, text)
+                }
+            }.map { Unit }
+        }
 
 
-    // -------- DOCTOR --------
 
-    suspend fun doctorGetPatients(username: String): Result<List<String>> =
+    // -------- PATIENT --------
+
+    suspend fun patientGetData(username: String): Result<PatientDataResponse> =
         withContext(Dispatchers.IO) {
             val req = Request.Builder()
-                .url("$baseUrl/doctor/getPatients/$username")
+                .url("$baseUrl/patient/getData/$username")
                 .get()
                 .build()
 
@@ -545,31 +290,311 @@ class ApiClient(
                     if (!resp.isSuccessful) error("HTTP ${resp.code}")
                     val text = resp.body?.string().orEmpty()
                     val json = JSONObject(text)
-                    val arr = json.optJSONArray("patients") ?: JSONArray()
-                    (0 until arr.length()).map { arr.getString(it) }
+
+                    val ts = json.optLong("timestamp", 0L)
+                    val arr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
+
+                    // mpuProcessedData: [ [4 floats], [4 floats], ... ]
+                    val batches = mutableListOf<List<Float>>()
+                    for (i in 0 until arr.length()) {
+                        val inner = arr.getJSONArray(i)
+                        val one = mutableListOf<Float>()
+                        for (j in 0 until inner.length()) {
+                            one.add(inner.getDouble(j).toFloat())
+                        }
+                        batches.add(one)
+                    }
+
+                    PatientDataResponse(timestamp = ts, mpuProcessedData = batches)
                 }
             }
         }
 
-    suspend fun doctorAddPatient(doctorName: String, patientName: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject()
-                .put("doctorName", doctorName)
-                .put("patientName", patientName)
-                .toString()
+    data class UserExperimentsResponse(
+        val userId: String,
+        val experimentIds: List<String>
+    )
 
-            postNoBody("$baseUrl/doctor/addPatient", body, okCodes = setOf(200), err400 = "Bad request")
+    suspend fun getExperimentsByUserId(userId: String, accessToken: String): Result<UserExperimentsResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/users/$userId/experiments")
+                    .get()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    val arr = json.optJSONArray("experimentIds") ?: JSONArray()
+                    val ids = buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
+
+                    UserExperimentsResponse(
+                        userId = json.getString("userId"),
+                        experimentIds = ids
+                    )
+                }
+            }
         }
 
-    suspend fun doctorSetComment(patientName: String, comment: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject()
-                .put("patientName", patientName)
-                .put("comment", comment)
-                .toString()
+    data class ExperimentMetrics(
+        val hip_rom_left: Double?,
+        val hip_rom_right: Double?,
+        val knee_rom_left: Double?,
+        val knee_rom_right: Double?,
+        val cadence_est: Double?,
+        val symmetry_index: Double?,
+        val pelvis_pitch_rom: Double?,
+        val pelvis_roll_rom: Double?,
+        val created_at: String?,
+        val commented_at: String?
+    )
 
-            postNoBody("$baseUrl/doctor/setComment", body, okCodes = setOf(200), err400 = "Bad request")
+    data class ExperimentInfoResponse(
+        val experimentId: String,
+        val userId: String,
+        val comment: String?,
+        val metrics: ExperimentMetrics?
+    )
+
+    suspend fun getExperimentInfo(experimentId: String, accessToken: String): Result<ExperimentInfoResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/experiments/$experimentId/info")
+                    .get()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    val metricsObj = json.optJSONObject("metrics")
+
+                    val metrics = metricsObj?.let {
+                        ExperimentMetrics(
+                            hip_rom_left = it.optDoubleOrNull("hip_rom_left"),
+                            hip_rom_right = it.optDoubleOrNull("hip_rom_right"),
+                            knee_rom_left = it.optDoubleOrNull("knee_rom_left"),
+                            knee_rom_right = it.optDoubleOrNull("knee_rom_right"),
+                            cadence_est = it.optDoubleOrNull("cadence_est"),
+                            symmetry_index = it.optDoubleOrNull("symmetry_index"),
+                            pelvis_pitch_rom = it.optDoubleOrNull("pelvis_pitch_rom"),
+                            pelvis_roll_rom = it.optDoubleOrNull("pelvis_roll_rom"),
+                            created_at = it.optString("created_at").ifBlank { null },
+                            commented_at = it.optString("commented_at").ifBlank { null }
+                        )
+                    }
+
+                    ExperimentInfoResponse(
+                        experimentId = json.getString("experimentId"),
+                        userId = json.getString("userId"),
+                        comment = json.optString("comment").ifBlank { null },
+                        metrics = metrics
+                    )
+                }
+            }
         }
+
+    data class ExperimentDataItem(
+        val ts_ms: Long,
+        val mpuProcessedData: List<List<Float>>
+    )
+
+    data class ExperimentDataApiResponse(
+        val experimentId: String,
+        val items: List<ExperimentDataItem>
+    )
+
+    suspend fun getExperimentData(experimentId: String, accessToken: String): Result<ExperimentDataApiResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/experiments/$experimentId/data")
+                    .get()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    val itemsArr = json.optJSONArray("items") ?: JSONArray()
+
+                    val items = buildList {
+                        for (i in 0 until itemsArr.length()) {
+                            val it = itemsArr.getJSONObject(i)
+                            val ts = it.optLong("ts_ms", 0L)
+
+                            val mpuArr = it.optJSONArray("mpuProcessedData") ?: JSONArray()
+                            val mpuProcessedData = buildList {
+                                for (s in 0 until mpuArr.length()) {
+                                    val row = mpuArr.getJSONArray(s)
+                                    add(
+                                        listOf(
+                                            row.getDouble(0).toFloat(),
+                                            row.getDouble(1).toFloat(),
+                                            row.getDouble(2).toFloat(),
+                                            row.getDouble(3).toFloat()
+                                        )
+                                    )
+                                }
+                            }
+
+                            add(ExperimentDataItem(ts_ms = ts, mpuProcessedData = mpuProcessedData))
+                        }
+                    }
+
+                    ExperimentDataApiResponse(
+                        experimentId = json.getString("experimentId"),
+                        items = items
+                    )
+                }
+            }
+        }
+
+    // helper: чтобы нормально обрабатывать null/отсутствие поля
+    private fun JSONObject.optDoubleOrNull(key: String): Double? {
+        return if (has(key) && !isNull(key)) optDouble(key) else null
+    }
+
+    data class PatientDoctorResponse(val patientId: String, val doctorId: String)
+
+    suspend fun getDoctorIdByPatientId(patientId: String, accessToken: String): Result<PatientDoctorResponse?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/patients/$patientId/doctor")
+                    .get()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (resp.code == 404) return@use null
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    PatientDoctorResponse(
+                        patientId = json.getString("patientId"),
+                        doctorId = json.getString("doctorId")
+                    )
+                }
+            }
+        }
+
+
+
+    // -------- DOCTOR --------
+    data class DoctorPatientsResponse(val doctorId: String, val patients: List<String>)
+
+    suspend fun getPatientsByDoctorId(doctorId: String, accessToken: String): Result<DoctorPatientsResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/doctors/$doctorId/patients")
+                    .get()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    val arr = json.optJSONArray("patients") ?: JSONArray()
+                    val pts = buildList { for (i in 0 until arr.length()) add(arr.getString(i)) }
+
+                    DoctorPatientsResponse(
+                        doctorId = json.getString("doctorId"),
+                        patients = pts
+                    )
+                }
+            }
+        }
+
+    data class AddPatientResponse(val doctorId: String, val patientId: String)
+
+    suspend fun addPatientToDoctor(doctorId: String, patientId: String, accessToken: String): Result<AddPatientResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject().put("patientId", patientId).toString()
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/doctors/$doctorId/patients")
+                    .post(body.toRequestBody(jsonType))
+                    .apply {
+                        header("Content-Type", "application/json")
+                        header("Authorization", "Bearer $accessToken")
+                    }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!(resp.code == 201 || resp.isSuccessful)) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    AddPatientResponse(
+                        doctorId = json.getString("doctorId"),
+                        patientId = json.getString("patientId")
+                    )
+                }
+            }
+        }
+
+    suspend fun deletePatientFromDoctor(doctorId: String, patientId: String, accessToken: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/doctors/$doctorId/patients/$patientId")
+                    .delete()
+                    .apply { header("Authorization", "Bearer $accessToken") }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    if (resp.code == 204) return@use
+                    val text = resp.body?.string().orEmpty()
+                    throw ApiHttpException(resp.code, text)
+                }
+            }.map { Unit }
+        }
+
+
+    data class SetCommentResponse(val experimentId: String, val comment: String?)
+
+    suspend fun setExperimentComment(experimentId: String, comment: String, accessToken: String): Result<SetCommentResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject().put("comment", comment).toString()
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/experiments/$experimentId/comment")
+                    .patch(body.toRequestBody(jsonType))
+                    .apply {
+                        header("Content-Type", "application/json")
+                        header("Authorization", "Bearer $accessToken")
+                    }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    SetCommentResponse(
+                        experimentId = json.getString("experimentId"),
+                        comment = json.optString("comment").ifBlank { null }
+                    )
+                }
+            }
+        }
+
 
     // -------- helper --------
 

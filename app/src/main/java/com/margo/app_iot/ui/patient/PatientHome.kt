@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.BleManager
@@ -289,177 +290,58 @@ private fun PatientConfigTab(
 }
 
 @Composable
-private fun PatientHistoryTab(
+fun PatientHistoryTab(
     api: ApiClient,
     session: SessionStore
 ) {
     val scope = rememberCoroutineScope()
-    val username by session.usernameFlow.collectAsState(initial = "")
+    val userId by session.usernameFlow.collectAsState(initial = "")
+    val accessToken by session.accessTokenFlow.collectAsState(initial = "")
 
-    // comment
-    var comment by remember { mutableStateOf("") }
-    var loadingComment by remember { mutableStateOf(false) }
-    var commentError by remember { mutableStateOf<String?>(null) }
+    var doctorId by remember { mutableStateOf<String?>(null) }
+    var doctorError by remember { mutableStateOf<String?>(null) }
+    var loadingDoctor by remember { mutableStateOf(false) }
 
-    // experiments list
-    var experiments by remember { mutableStateOf(listOf<String>()) }
-    var loadingList by remember { mutableStateOf(false) }
-    var listError by remember { mutableStateOf<String?>(null) }
-    var selectedExperiment by remember { mutableStateOf<String?>(null) }
-
-    // selected experiment result
-    var result by remember { mutableStateOf<ApiClient.PatResult?>(null) }
-    var loadingResult by remember { mutableStateOf(false) }
-    var resultError by remember { mutableStateOf<String?>(null) }
-
-    fun loadComment() {
-        if (username.isBlank()) return
-        loadingComment = true
-        commentError = null
+    fun loadDoctor() {
+        if (userId.isBlank() || accessToken.isBlank()) return
+        loadingDoctor = true
+        doctorError = null
         scope.launch {
-            val res = api.patientGetComment(username)
-            loadingComment = false
-            if (res.isSuccess) comment = res.getOrNull().orEmpty()
-            else commentError = res.exceptionOrNull()?.message ?: "Failed to load comment"
-        }
-    }
-
-    fun loadExperiments() {
-        if (username.isBlank()) return
-        loadingList = true
-        listError = null
-        scope.launch {
-            val res = api.patientGetExperiments(username)
-            loadingList = false
-            if (res.isSuccess) experiments = res.getOrNull().orEmpty()
-            else listError = res.exceptionOrNull()?.message ?: "Failed to load experiments"
-        }
-    }
-
-    fun loadSelectedResult(expId: String) {
-        if (username.isBlank()) return
-        selectedExperiment = expId
-        loadingResult = true
-        resultError = null
-        result = null
-
-        scope.launch {
-            val res = api.patientGetPatResult(username, expId)
-            loadingResult = false
-            if (res.isSuccess) result = res.getOrNull()
-            else resultError = res.exceptionOrNull()?.message ?: "Failed to load result"
-        }
-    }
-
-    LaunchedEffect(username) {
-        if (username.isNotBlank()) {
-            loadComment()
-            loadExperiments()
-        }
-    }
-
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("History", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(10.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { loadComment() }) {
-                Text(if (loadingComment) "Loading..." else "Refresh comment")
-            }
-            Button(onClick = { loadExperiments() }) {
-                Text(if (loadingList) "Loading..." else "Refresh experiments")
+            val res = api.getDoctorIdByPatientId(patientId = userId, accessToken = accessToken)
+            loadingDoctor = false
+            if (res.isSuccess) {
+                // если у тебя 404 -> null, то тут будет null
+                doctorId = res.getOrNull()?.doctorId
+            } else {
+                doctorError = res.exceptionOrNull()?.message ?: "Failed to load doctor"
             }
         }
+    }
 
-        // ---- comment ----
-        Spacer(Modifier.height(10.dp))
-        if (commentError != null) Text(commentError!!, color = MaterialTheme.colorScheme.error)
+    LaunchedEffect(userId, accessToken) {
+        if (userId.isNotBlank() && accessToken.isNotBlank()) loadDoctor()
+    }
 
-        Spacer(Modifier.height(10.dp))
-        OutlinedTextField(
-            value = comment,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Doctor comment") },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
+    Column(Modifier.fillMaxSize()) {
+        if (loadingDoctor) {
+            // можно показывать где-то сверху, не обязательно
+        }
+        if (doctorError != null) {
+            // тоже можно показывать где-то сверху
+        }
+
+        com.margo.app_iot.ui.shared.ExperimentsScreen(
+            api = api,
+            accessToken = accessToken,
+            ownerUserId = userId,
+            doctorIdLabel = doctorId,
+            editableComment = false,
+            title = "History"
         )
-
-        // ---- experiments list ----
-        Spacer(Modifier.height(16.dp))
-        Text("Experiments", style = MaterialTheme.typography.titleMedium)
-
-        if (listError != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(listError!!, color = MaterialTheme.colorScheme.error)
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        if (experiments.isEmpty() && !loadingList) {
-            Text("No experiments yet.", style = MaterialTheme.typography.bodyMedium)
-        } else {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
-                items(experiments) { exp ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        onClick = { loadSelectedResult(exp) }
-                    ) {
-                        Column(Modifier.padding(14.dp)) {
-                            Text(exp, style = MaterialTheme.typography.titleMedium)
-                            if (selectedExperiment == exp) {
-                                Text("Selected", style = MaterialTheme.typography.bodySmall)
-                            } else {
-                                Text("Tap to open", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ---- selected experiment result ----
-        Spacer(Modifier.height(14.dp))
-        Text("Selected experiment result", style = MaterialTheme.typography.titleMedium)
-
-        if (loadingResult) {
-            Spacer(Modifier.height(8.dp))
-            Text("Loading result...")
-        }
-
-        if (resultError != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(resultError!!, color = MaterialTheme.colorScheme.error)
-        }
-
-        val r = result
-        if (r != null) {
-            Spacer(Modifier.height(8.dp))
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    if (r.updatedAt != null) {
-                        Text("Updated at: ${r.updatedAt}", style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.height(8.dp))
-                    }
-
-                    MetricRow("Hip Range of Motion (Left)", r.hipRomLeft)
-                    MetricRow("Hip Range of Motion (Right)", r.hipRomRight)
-                    MetricRow("Knee Range of Motion (Left)", r.kneeRomLeft)
-                    MetricRow("Knee Range of Motion (Right)", r.kneeRomRight)
-
-                    Spacer(Modifier.height(6.dp))
-                    MetricRow("Cadence (Estimated)", r.cadenceEst)
-                    MetricRow("Symmetry Index", r.symmetryIndex)
-
-                    Spacer(Modifier.height(6.dp))
-                    MetricRow("Pelvis Pitch Range of Motion", r.pelvisPitchRom)
-                    MetricRow("Pelvis Roll Range of Motion", r.pelvisRollRom)
-                }
-            }
-        }
     }
 }
+
+
 
 @Composable
 private fun MetricRow(label: String, value: Double?) {
@@ -475,145 +357,171 @@ private fun MetricRow(label: String, value: Double?) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PatientExperiments3DTab(
+fun PatientExperiments3DTab(
     api: ApiClient,
     session: SessionStore
 ) {
     val scope = rememberCoroutineScope()
-    val username by session.usernameFlow.collectAsState(initial = "")
 
-    var experiments by remember { mutableStateOf(listOf<String>()) }
-    var expanded by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf<String?>(null) }
+    val userId by session.usernameFlow.collectAsState(initial = "")
+    val accessToken by session.accessTokenFlow.collectAsState(initial = "")
 
-    var loadingList by remember { mutableStateOf(false) }
-    var loadingData by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var experimentIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var listLoading by remember { mutableStateOf(false) }
+    var listError by remember { mutableStateOf<String?>(null) }
 
-    var lastLoaded by remember { mutableStateOf<ExperimentDataResponse?>(null) }
+    var selectedExpId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val filtered = remember(experiments, query) {
-        if (query.isBlank()) experiments
-        else experiments.filter { it.contains(query, ignoreCase = true) }
-    }
+    var dataLoading by remember { mutableStateOf(false) }
+    var dataError by remember { mutableStateOf<String?>(null) }
+    var lastData by remember { mutableStateOf<ApiClient.ExperimentDataApiResponse?>(null) }
 
-    fun loadExperiments() {
-        if (username.isBlank()) return
-        loadingList = true
-        error = null
+    fun refreshExperiments() {
+        if (userId.isBlank() || accessToken.isBlank()) return
+        listLoading = true
+        listError = null
         scope.launch {
-            val res = api.patientGetExperiments(username)
-            loadingList = false
+            val res = api.getExperimentsByUserId(userId = userId, accessToken = accessToken)
+            listLoading = false
             if (res.isSuccess) {
-                experiments = res.getOrNull().orEmpty()
+                experimentIds = res.getOrNull()?.experimentIds ?: emptyList()
+                if (selectedExpId == null && experimentIds.isNotEmpty()) {
+                    selectedExpId = experimentIds.first()
+                }
             } else {
-                error = res.exceptionOrNull()?.message ?: "Failed to load experiments"
+                listError = res.exceptionOrNull()?.message ?: "Failed to load experiments"
             }
         }
     }
 
-    LaunchedEffect(username) {
-        if (username.isNotBlank()) loadExperiments()
+    fun loadSelectedData() {
+        val expId = selectedExpId ?: return
+        if (accessToken.isBlank()) return
+
+        dataLoading = true
+        dataError = null
+        scope.launch {
+            val res = api.getExperimentData(experimentId = expId, accessToken = accessToken)
+            dataLoading = false
+            if (res.isSuccess) {
+                lastData = res.getOrNull()
+            } else {
+                dataError = res.exceptionOrNull()?.message ?: "Failed to load experiment data"
+            }
+        }
+    }
+
+    LaunchedEffect(userId, accessToken) {
+        if (userId.isNotBlank() && accessToken.isNotBlank()) {
+            refreshExperiments()
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("3D Model", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(10.dp))
+        Text("3D / Experiment data", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(12.dp))
 
-        if (username.isBlank()) {
-            Text("Loading user...", color = MaterialTheme.colorScheme.tertiary)
+        if (accessToken.isBlank()) {
+            Text("No access token. Please login again.", color = MaterialTheme.colorScheme.error)
             return@Column
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Experiment", style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { loadExperiments() }) {
-                Text(if (loadingList) "..." else "Refresh")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = { refreshExperiments() }, enabled = !listLoading) {
+                if (listLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Refresh experiments")
+            }
+
+            OutlinedButton(
+                onClick = { loadSelectedData() },
+                enabled = selectedExpId != null && !dataLoading
+            ) {
+                if (dataLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Load data")
             }
         }
 
+        if (listError != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(listError!!, color = MaterialTheme.colorScheme.error)
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        Text("Select experiment:", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(8.dp))
 
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded }
-        ) {
-            OutlinedTextField(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(),
-                value = query,
-                onValueChange = {
-                    query = it
-                    expanded = true
-                },
-                label = { Text("Search / select experiment") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
-            )
+        if (experimentIds.isEmpty() && !listLoading) {
+            Text("No experiments yet.")
+            return@Column
+        }
 
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                filtered.forEach { exp ->
-                    DropdownMenuItem(
-                        text = { Text(exp) },
-                        onClick = {
-                            selected = exp
-                            query = exp
-                            expanded = false
+        // Simple selectable list
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(experimentIds.size) { idx ->
+                val expId = experimentIds[idx]
+                val selected = expId == selectedExpId
+
+                Card(
+                    onClick = { selectedExpId = expId },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = if (selected) {
+                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    } else CardDefaults.cardColors()
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(expId, style = MaterialTheme.typography.titleMedium)
+
+                            // TODO: show experiment start time here when backend provides it
                         }
-                    )
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(12.dp))
 
-        Button(
-            onClick = {
-                val expId = selected ?: return@Button
-                loadingData = true
-                error = null
-                scope.launch {
-                    val res = api.patientGetExperimentData(username, expId)
-                    loadingData = false
-                    if (res.isSuccess) {
-                        lastLoaded = res.getOrNull()
-                        // TODO: start 3D simulation rendering here (later)
-                    } else {
-                        error = res.exceptionOrNull()?.message ?: "Failed to load experiment data"
-                    }
+        // Loaded data summary (placeholder for real 3D rendering)
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Loaded data (preview)", style = MaterialTheme.typography.titleSmall)
+
+                if (dataError != null) {
+                    Text(dataError!!, color = MaterialTheme.colorScheme.error)
                 }
-            },
-            enabled = selected != null && !loadingData,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (loadingData) "Loading..." else "Show simulation")
-        }
 
-        if (error != null) {
-            Spacer(Modifier.height(10.dp))
-            Text(error!!, color = MaterialTheme.colorScheme.error)
-        }
+                val d = lastData
+                if (d == null) {
+                    Text("—")
+                } else {
+                    val n = d.items.size
+                    val last = d.items.lastOrNull()
+                    val lastTs = last?.ts_ms
+                    val sensors = last?.mpuProcessedData?.size
 
-        Spacer(Modifier.height(16.dp))
+                    Text("experimentId: ${d.experimentId}")
+                    Text("items: $n")
+                    Text("last ts_ms: ${lastTs ?: "—"}")
+                    Text("sensors in last item: ${sensors ?: "—"}")
 
-        // заглушка с фактом получения данных
-        val data = lastLoaded
-        if (data == null) {
-            Text("Simulation placeholder (TODO)", style = MaterialTheme.typography.titleMedium)
-            Text("Select an experiment and press “Show simulation”.", style = MaterialTheme.typography.bodyMedium)
-        } else {
-            Text("Loaded experiment data:", style = MaterialTheme.typography.titleMedium)
-//            Text("deviceID: ${data.deviceID}", style = MaterialTheme.typography.bodyMedium)
-//            Text("timestamp: ${data.timestamp}", style = MaterialTheme.typography.bodyMedium)
-//            Text("frames: ${data.mpuProcessedData.size}", style = MaterialTheme.typography.bodyMedium)
-
-            Spacer(Modifier.height(10.dp))
-            Text("3D rendering TODO: we will draw cylinders / stick model later.", style = MaterialTheme.typography.bodyMedium)
+                    // TODO: here you can pass d.items into your 3D pipeline / animation player
+                }
+            }
         }
     }
 }
+
 
