@@ -78,6 +78,9 @@ fun PatientHome(
 
                 PatientTab.Config -> PatientConfigTab(
                     isConnected = isConnected,
+                    api = api,
+                    auth = auth,
+                    session = session,
                     bleManager = bleManager
                 )
 
@@ -124,6 +127,16 @@ fun PatientBleTab(
     connectedDeviceName: String?,
     bleManager: BleManager
 ) {
+//    var bleDebugText by remember { mutableStateOf("—") }
+//
+//    LaunchedEffect(Unit) {
+//        bleManager.setOnBleDebugListener { msg ->
+//            bleDebugText = msg
+//        }
+//    }
+
+
+
     val scope = rememberCoroutineScope()
 
     val userId by session.usernameFlow.collectAsState(initial = "")
@@ -137,93 +150,93 @@ fun PatientBleTab(
     // 1) sendUserId(userId) в ESP
     // 2) GET device pairing на сервере (через auth.call, чтобы работал refresh)
     // 3) при необходимости PUT новый deviceId
-    LaunchedEffect(Unit) {
-        bleManager.setOnDeviceIdListener { devId ->
-            if (devId.isBlank()) return@setOnDeviceIdListener
-            if (pairingInProgress && devId == lastEspDeviceId) return@setOnDeviceIdListener
-
-            lastEspDeviceId = devId
-
-            scope.launch {
-                if (userId.isBlank()) {
-                    pairingStatus = "Pairing error: userId is empty."
-                    return@launch
-                }
-
-                pairingInProgress = true
-                pairingStatus = "ESP deviceId received: $devId. Sending userId to ESP..."
-
-                // 1) send userId to ESP
-                bleManager.sendUserId(userId)
-
-                // 2) check server (authed)
-                pairingStatus = "Checking device on server..."
-                val getRes = auth.call { token ->
-                    api.getDeviceByUserId(userId = userId, accessToken = token)
-                }
-
-                if (getRes.isSuccess) {
-                    val serverPair = getRes.getOrNull() // null == 404 "not paired"
-
-                    if (serverPair == null) {
-                        // 404 -> upsert
-                        pairingStatus = "Server: not paired (404). Pairing..."
-                        val putRes = auth.call { token ->
-                            api.putDeviceByUserId(userId = userId, deviceId = devId, accessToken = token)
-                        }
-
-                        if (putRes.isSuccess) {
-                            session.setDeviceId(devId)
-                            pairingStatus = "Paired OK. DeviceId saved: $devId"
-                        } else {
-                            val e = putRes.exceptionOrNull()
-                            pairingStatus = "Pairing failed: ${e?.toUserMessage() ?: "unknown error"}"
-                        }
-                    } else {
-                        // compare
-                        if (serverPair.deviceId == devId) {
-                            session.setDeviceId(devId)
-                            pairingStatus = "Paired OK (server matches). DeviceId saved: $devId"
-                        } else {
-                            pairingStatus =
-                                "Mismatch. Server: ${serverPair.deviceId}, ESP: $devId. Updating server..."
-
-                            val putRes = auth.call { token ->
-                                api.putDeviceByUserId(userId = userId, deviceId = devId, accessToken = token)
-                            }
-
-                            if (putRes.isSuccess) {
-                                session.setDeviceId(devId)
-                                pairingStatus = "Server updated. DeviceId saved: $devId"
-                            } else {
-                                val e = putRes.exceptionOrNull()
-                                pairingStatus = "Failed to update server: ${e?.toUserMessage() ?: "unknown error"}"
-                            }
-                        }
-                    }
-                } else {
-                    val e = getRes.exceptionOrNull()
-                    if (e is ApiClient.ApiHttpException && e.code == 403) {
-                        pairingStatus = "Forbidden (403): not allowed to access pairing."
-                    } else {
-                        pairingStatus = "Failed to check server: ${e?.toUserMessage() ?: "unknown error"}"
-                    }
-                }
-
-                pairingInProgress = false
-            }
-        }
-    }
+//    LaunchedEffect(Unit) {
+//        bleManager.setOnDeviceIdListener { devId ->
+//            if (devId.isBlank()) return@setOnDeviceIdListener
+//            if (pairingInProgress && devId == lastEspDeviceId) return@setOnDeviceIdListener
+//
+//            lastEspDeviceId = devId
+//
+//            scope.launch {
+//                if (userId.isBlank()) {
+//                    pairingStatus = "Pairing error: userId is empty."
+//                    return@launch
+//                }
+//
+//                pairingInProgress = true
+//                pairingStatus = "ESP deviceId received: $devId. Sending userId to ESP..."
+//
+//                // 1) send userId to ESP
+//                bleManager.sendUserId(userId)
+//
+//                // 2) check server (authed)
+//                pairingStatus = "Checking device on server..."
+//                val getRes = auth.call { token ->
+//                    api.getDeviceByUserId(userId = userId, accessToken = token)
+//                }
+//
+//                if (getRes.isSuccess) {
+//                    val serverPair = getRes.getOrNull() // null == 404 "not paired"
+//
+//                    if (serverPair == null) {
+//                        // 404 -> upsert
+//                        pairingStatus = "Server: not paired (404). Pairing..."
+//                        val putRes = auth.call { token ->
+//                            api.putDeviceByUserId(userId = userId, deviceId = devId, accessToken = token)
+//                        }
+//
+//                        if (putRes.isSuccess) {
+//                            session.setDeviceId(devId)
+//                            pairingStatus = "Paired OK. DeviceId saved: $devId"
+//                        } else {
+//                            val e = putRes.exceptionOrNull()
+//                            pairingStatus = "Pairing failed: ${e?.toUserMessage() ?: "unknown error"}"
+//                        }
+//                    } else {
+//                        // compare
+//                        if (serverPair.deviceId == devId) {
+//                            session.setDeviceId(devId)
+//                            pairingStatus = "Paired OK (server matches). DeviceId saved: $devId"
+//                        } else {
+//                            pairingStatus =
+//                                "Mismatch. Server: ${serverPair.deviceId}, ESP: $devId. Updating server..."
+//
+//                            val putRes = auth.call { token ->
+//                                api.putDeviceByUserId(userId = userId, deviceId = devId, accessToken = token)
+//                            }
+//
+//                            if (putRes.isSuccess) {
+//                                session.setDeviceId(devId)
+//                                pairingStatus = "Server updated. DeviceId saved: $devId"
+//                            } else {
+//                                val e = putRes.exceptionOrNull()
+//                                pairingStatus = "Failed to update server: ${e?.toUserMessage() ?: "unknown error"}"
+//                            }
+//                        }
+//                    }
+//                } else {
+//                    val e = getRes.exceptionOrNull()
+//                    if (e is ApiClient.ApiHttpException && e.code == 403) {
+//                        pairingStatus = "Forbidden (403): not allowed to access pairing."
+//                    } else {
+//                        pairingStatus = "Failed to check server: ${e?.toUserMessage() ?: "unknown error"}"
+//                    }
+//                }
+//
+//                pairingInProgress = false
+//            }
+//        }
+//    }
 
     // при подключении включаем notify на deviceId characteristic
-    LaunchedEffect(isConnected) {
-        if (isConnected) {
-            bleManager.enableDeviceIdNotifications()
-            pairingStatus = "Connected. Press the button on ESP to send deviceId..."
-        } else {
-            pairingInProgress = false
-        }
-    }
+//    LaunchedEffect(isConnected) {
+//        if (isConnected) {
+//            bleManager.enableDeviceIdNotifications()
+//            pairingStatus = "Connected. Press the button on ESP to send deviceId..."
+//        } else {
+//            pairingInProgress = false
+//        }
+//    }
 
     Column(Modifier.fillMaxSize()) {
         com.margo.app_iot.BleConnectScreen(
@@ -264,20 +277,45 @@ fun PatientBleTab(
 
         Spacer(Modifier.height(12.dp))
     }
+//
+//    Spacer(Modifier.height(12.dp))
+//
+//    Card(
+//        modifier = Modifier
+//            .fillMaxWidth()
+//            .padding(horizontal = 12.dp)
+//    ) {
+//        Column(Modifier.padding(12.dp)) {
+//            Text("BLE Debug", style = MaterialTheme.typography.titleMedium)
+//            Spacer(Modifier.height(6.dp))
+//            Text(bleDebugText)
+//
+//            Spacer(Modifier.height(8.dp))
+//            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+//                OutlinedButton(onClick = { bleDebugText = "—" }) { Text("Clear") }
+//            }
+//        }
+//    }
 }
 
 @Composable
 private fun PatientConfigTab(
     isConnected: Boolean,
+    api: ApiClient,
+    auth: AuthRepository,
+    session: SessionStore,
     bleManager: BleManager
 ) {
     com.margo.app_iot.ConfigScreen(
         modifier = Modifier.fillMaxSize(),
         isConnected = isConnected,
+        api = api,
+        auth = auth,
+        session = session,
+        bleManager = bleManager,
         onApplyWifi = { ssid, pass -> bleManager.sendWifi(ssid, pass) },
         onApplyConfig = { cfg -> bleManager.sendConfig(cfg) },
-        onFinishExperiment = { bleManager.finishExperiment() },
-        isConfigApplied = false
+        onFinishExperiment = { bleManager.finishExperiment() }
     )
 }
 

@@ -18,6 +18,12 @@ class BleManager(
     private val onConfigApplied: () -> Unit
 ) {
 
+//    private var onBleDebug: ((String) -> Unit)? = null
+//
+//    fun setOnBleDebugListener(cb: ((String) -> Unit)?) {
+//        onBleDebug = cb
+//    }
+
     // ===== UUIDs =====
     // ===== Wi-Fi =====
     private val WIFI_SERVICE_UUID = shortUuid(0xFFF0)
@@ -93,6 +99,36 @@ class BleManager(
             Log.e("BLE", "stopScan failed", e)
         }
     }
+
+    fun disconnectAndClose() {
+        // Остановить сканирование (если шло)
+        stopScan()
+
+        // Сбросить буферы/коллбеки чтобы ничего не прилетало в UI после logout
+        clearCallbacks()
+        jsonRxBuffer.clear()
+
+        // Разорвать gatt
+        try {
+            gatt?.disconnect()
+        } catch (_: Exception) {}
+
+        try {
+            gatt?.close()
+        } catch (_: Exception) {}
+
+        gatt = null
+    }
+
+    fun clearCallbacks() {
+        onQuaternionSample = null
+        onQuaternionBatch = null
+        onDeviceIdReceived = null
+        // onConfigApplied у тебя приходит в конструктор как callback — его занулять нельзя
+    }
+
+
+
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(type: Int, result: ScanResult) {
@@ -346,13 +382,20 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
+//            onBleDebug?.invoke(
+//                "NOTIFY uuid=${characteristic.uuid} bytes=${value.size}"
+//            )
 
+            // 1) DeviceId notify (ESP -> phone)
             if (characteristic.uuid == DEVICE_ID_CHAR_UUID) {
                 val devId = try {
                     String(value, Charsets.UTF_8)
                         .trim()
                         .trim('\u0000')
-                } catch (_: Exception) { "" }
+                } catch (_: Exception) {
+                    ""
+                }
+//                onBleDebug?.invoke("DEVICE_ID parsed: \"$devId\"")
 
                 if (devId.isNotBlank()) {
                     onDeviceIdReceived?.invoke(devId)
@@ -360,78 +403,63 @@ class BleManager(
                 return
             }
 
+            // 2) Quaternion JSON notify only
             if (characteristic.uuid != QUAT_CHAR_UUID) return
 
-            // 1) Попытка как текст (JSON может приходить кусками)
+            // JSON приходит кусками — собираем в буфер.
             val chunk = try {
                 String(value, Charsets.UTF_8)
-            } catch (e: Exception) {
-                ""
-            }
-
-            val looksLikeText = chunk.any { it == '{' || it == '}' || it == '[' || it == ']' || it == ':' || it == '"' }
-
-            if (looksLikeText) {
-                jsonRxBuffer.append(chunk)
-
-                val bufStr = jsonRxBuffer.toString()
-                val endIndex = bufStr.lastIndexOf('}')
-                if (endIndex != -1) {
-                    val jsonStr = bufStr.substring(0, endIndex + 1)
-
-                    jsonRxBuffer.clear()
-                    if (endIndex + 1 < bufStr.length) {
-                        jsonRxBuffer.append(bufStr.substring(endIndex + 1))
-                    }
-
-                    try {
-                        val json = JSONObject(jsonStr)
-                        val mpuArr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
-
-                        val batch = buildList {
-                            for (i in 0 until mpuArr.length()) {
-                                val row = mpuArr.optJSONArray(i) ?: continue
-                                if (row.length() >= 4) {
-                                    add(
-                                        QuaternionSample(
-                                            q0 = row.getDouble(0).toFloat(),
-                                            q1 = row.getDouble(1).toFloat(),
-                                            q2 = row.getDouble(2).toFloat(),
-                                            q3 = row.getDouble(3).toFloat()
-                                        )
-                                    )
-                                }
-                            }
-                        }
-
-                        if (batch.isNotEmpty()) {
-                            // ВАЖНО: графики подписаны на batch
-                            onQuaternionBatch?.invoke(batch)
-
-                            // OPTIONAL: совместимость со старым single-sample UI
-                            onQuaternionSample?.invoke(batch.first())
-                        }
-                    } catch (e: Exception) {
-                        // ignore bad JSON
-                    }
-                }
+            } catch (_: Exception) {
                 return
             }
 
-            // 2) Fallback: старый бинарный формат (4 float little-endian)
-            val buffer = java.nio.ByteBuffer
-                .wrap(value)
-                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            // Если вообще не похоже на JSON — игнорируем (старые форматы больше не поддерживаем).
+            val looksLikeJson = chunk.any { it == '{' || it == '}' || it == '[' || it == ']' || it == ':' || it == '"' }
+            if (!looksLikeJson) return
 
-            val sample = QuaternionSample(
-                q0 = buffer.float,
-                q1 = buffer.float,
-                q2 = buffer.float,
-                q3 = buffer.float
-            )
+            jsonRxBuffer.append(chunk)
 
-            onQuaternionSample?.invoke(sample)
+            val bufStr = jsonRxBuffer.toString()
+            val endIndex = bufStr.lastIndexOf('}')
+            if (endIndex == -1) return
+
+            // Берём завершённый JSON-объект (до последней '}')
+            val jsonStr = bufStr.substring(0, endIndex + 1)
+
+            // Оставшийся хвост после '}' сохраняем на следующий раз
+            jsonRxBuffer.clear()
+            if (endIndex + 1 < bufStr.length) {
+                jsonRxBuffer.append(bufStr.substring(endIndex + 1))
+            }
+
+            try {
+                val json = JSONObject(jsonStr)
+                val mpuArr = json.optJSONArray("mpuProcessedData") ?: return
+
+                val batch = buildList {
+                    for (i in 0 until mpuArr.length()) {
+                        val row = mpuArr.optJSONArray(i) ?: continue
+                        if (row.length() >= 4) {
+                            add(
+                                QuaternionSample(
+                                    q0 = row.getDouble(0).toFloat(),
+                                    q1 = row.getDouble(1).toFloat(),
+                                    q2 = row.getDouble(2).toFloat(),
+                                    q3 = row.getDouble(3).toFloat()
+                                )
+                            )
+                        }
+                    }
+                }
+
+                if (batch.isNotEmpty()) {
+                    onQuaternionBatch?.invoke(batch)
+                }
+            } catch (_: Exception) {
+                // Игнорируем битый/неполный JSON
+            }
         }
+
 
 
 
@@ -445,6 +473,7 @@ class BleManager(
             } else {
                 println("CCCD enabled OK")
             }
+//            onBleDebug?.invoke("onDescriptorWrite uuid=${descriptor.uuid} status=$status")
         }
     }
 
@@ -455,34 +484,74 @@ class BleManager(
         g.readCharacteristic(ch)
     }
 
-    fun enableQuaternionNotifications() {
-        val g = gatt ?: return
-        val service = g.getService(DATA_SERVICE_UUID) ?: return
-        val ch = service.getCharacteristic(QUAT_CHAR_UUID) ?: return
+//    fun enableQuaternionNotifications() {
+//        val g = gatt ?: return
+//        val service = g.getService(DATA_SERVICE_UUID) ?: return
+//        val ch = service.getCharacteristic(QUAT_CHAR_UUID) ?: return
+//
+//        g.setCharacteristicNotification(ch, true)
+//
+//        val cccd = ch.getDescriptor(
+//            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+//        ) ?: return
+//
+//        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+//        g.writeDescriptor(cccd)
+//    }
+//
+//    fun enableDeviceIdNotifications() {
+//        val g = gatt ?: return
+//        val service = g.getService(CONFIG_SERVICE_UUID) ?: return
+//        val ch = service.getCharacteristic(DEVICE_ID_CHAR_UUID) ?: return
+//
+//        g.setCharacteristicNotification(ch, true)
+//
+//        val cccd = ch.getDescriptor(
+//            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+//        ) ?: return
+//
+//        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+//        g.writeDescriptor(cccd)
+//    }
 
-        g.setCharacteristicNotification(ch, true)
+    private val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805F9B34FB")
 
-        val cccd = ch.getDescriptor(
-            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-        ) ?: return
+    private fun enableNotify(serviceUuid: UUID, charUuid: UUID, tag: String) {
+        val g = gatt ?: run {
+//            onBleDebug?.invoke("$tag: gatt=null")
+            return
+        }
+        val service = g.getService(serviceUuid) ?: run {
+//            onBleDebug?.invoke("$tag: service not found $serviceUuid")
+            return
+        }
+        val ch = service.getCharacteristic(charUuid) ?: run {
+//            onBleDebug?.invoke("$tag: char not found $charUuid")
+            return
+        }
+
+        val okNotif = g.setCharacteristicNotification(ch, true)
+//        onBleDebug?.invoke("$tag: setCharacteristicNotification=$okNotif")
+
+        val cccd = ch.getDescriptor(CCCD_UUID) ?: run {
+//            onBleDebug?.invoke("$tag: CCCD(2902) not found")
+            return
+        }
 
         cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        g.writeDescriptor(cccd)
+        val okWrite = g.writeDescriptor(cccd)
+//        onBleDebug?.invoke("$tag: writeDescriptor(CCCD)=$okWrite")
+
+        // если false — значит GATT был занят и запись не ушла
+        // (дальше можно сделать retry, но хотя бы ты увидишь причину)
     }
 
     fun enableDeviceIdNotifications() {
-        val g = gatt ?: return
-        val service = g.getService(CONFIG_SERVICE_UUID) ?: return
-        val ch = service.getCharacteristic(DEVICE_ID_CHAR_UUID) ?: return
+        enableNotify(CONFIG_SERVICE_UUID, DEVICE_ID_CHAR_UUID, tag = "DEV_ID_NOTIFY")
+    }
 
-        g.setCharacteristicNotification(ch, true)
-
-        val cccd = ch.getDescriptor(
-            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
-        ) ?: return
-
-        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        g.writeDescriptor(cccd)
+    fun enableQuaternionNotifications() {
+        enableNotify(DATA_SERVICE_UUID, QUAT_CHAR_UUID, tag = "QUAT_NOTIFY")
     }
 
 

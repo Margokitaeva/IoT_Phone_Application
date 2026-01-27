@@ -97,14 +97,42 @@ class MainActivity : ComponentActivity() {
                             devices = scanResults,
                             isConnected = isConnected.value,
                             connectedDeviceName = connectedDeviceName.value,
-                            onLogout = { scope.launch { auth.logout() } }
+                            onLogout = {
+                                scope.launch {
+                                    // 1) BLE disconnect/close + stop scan
+                                    bleManager.disconnectAndClose()
+
+                                    // 2) (опционально) чистим UI-список найденных девайсов
+                                    scanResults.clear()
+                                    isConnected.value = false
+                                    connectedDeviceName.value = null
+
+                                    // 3) server logout + local session logout (у тебя это уже внутри auth.logout())
+                                    auth.logout()
+                                }
+                            }
+
                         )
                     } else {
                         DoctorHome(
                             api = api,
                             auth = auth,
                             session = session,
-                            onLogout = { scope.launch { auth.logout() } }
+                            onLogout = {
+                                scope.launch {
+                                    // 1) BLE disconnect/close + stop scan
+                                    bleManager.disconnectAndClose()
+
+                                    // 2) (опционально) чистим UI-список найденных девайсов
+                                    scanResults.clear()
+                                    isConnected.value = false
+                                    connectedDeviceName.value = null
+
+                                    // 3) server logout + local session logout (у тебя это уже внутри auth.logout())
+                                    auth.logout()
+                                }
+                            }
+
                         )
                     }
                 }

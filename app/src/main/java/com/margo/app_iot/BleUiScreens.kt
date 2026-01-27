@@ -8,6 +8,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.margo.app_iot.data.SessionStore
+import com.margo.app_iot.network.ApiClient
+import com.margo.app_iot.network.AuthRepository
+import com.margo.app_iot.network.toUserMessage
+import kotlinx.coroutines.launch
 
 @Composable
 fun BleConnectScreen(
@@ -95,14 +100,21 @@ fun BleConnectScreen(
     }
 }
 
+private enum class HandshakePhase {
+    WaitingForNotify, Exchanging, Ready, Error
+}
+
 @Composable
 fun ConfigScreen(
     modifier: Modifier = Modifier,
     isConnected: Boolean,
+    api: ApiClient,
+    auth: AuthRepository,
+    session: SessionStore,
+    bleManager: BleManager,
     onApplyWifi: (String, String) -> Unit,
     onApplyConfig: (Map<String, String>) -> Unit,
     onFinishExperiment: () -> Unit,
-    isConfigApplied: Boolean
 ) {
     if (!isConnected) {
         Column(modifier.padding(16.dp)) {
@@ -111,14 +123,170 @@ fun ConfigScreen(
         return
     }
 
+    val scope = rememberCoroutineScope()
+
+    val userId by session.usernameFlow.collectAsState(initial = "")
+    val savedDeviceId by session.deviceIdFlow.collectAsState(initial = "")
+
+    var phase by remember { mutableStateOf(HandshakePhase.WaitingForNotify) }
+    var statusText by remember { mutableStateOf("Waiting for confirmation from device…") }
+    var lastEspDeviceId by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    // если уже спарено (есть deviceId в сессии) — считаем handshake done
+    LaunchedEffect(savedDeviceId) {
+        if (savedDeviceId.isNotBlank()) {
+            phase = HandshakePhase.Ready
+            statusText = "Successfully connected to device ($savedDeviceId). You can configure it."
+            busy = false
+        }
+    }
+
+    // при заходе на экран — включаем notify и ждём deviceId
+    LaunchedEffect(isConnected) {
+        if (isConnected && savedDeviceId.isBlank()) {
+            phase = HandshakePhase.WaitingForNotify
+            statusText = "Waiting for confirmation from device… (press the button on device)"
+            busy = false
+            bleManager.enableDeviceIdNotifications()
+        }
+    }
+
+    // слушаем deviceId notify (handshake живёт тут!)
+    DisposableEffect(Unit) {
+        bleManager.setOnDeviceIdListener { devId ->
+            if (devId.isBlank()) return@setOnDeviceIdListener
+            if (busy) return@setOnDeviceIdListener // игнор дубликатов, пока обрабатываем
+
+            lastEspDeviceId = devId
+
+            scope.launch {
+                if (userId.isBlank()) {
+                    phase = HandshakePhase.Error
+                    statusText = "Handshake error: userId is empty (login again)."
+                    return@launch
+                }
+
+                busy = true
+                phase = HandshakePhase.Exchanging
+                statusText = "Data exchange with device… received deviceId=$devId, sending userId…"
+
+                // 1) send userId to ESP (по твоей логике: только после того, как ESP прислал deviceId)
+                bleManager.sendUserId(userId)
+
+                // 2) server pairing check + upsert (чтобы логика совпадала с тем, что ты делала в BLE табе)
+                statusText = "Checking pairing on server…"
+
+                val getRes = auth.call { token ->
+                    api.getDeviceByUserId(userId = userId, accessToken = token)
+                }
+
+                if (getRes.isSuccess) {
+                    val serverPair = getRes.getOrNull() // null == 404 "not paired" (как у тебя было)
+
+                    if (serverPair == null) {
+                        statusText = "Server: not paired. Pairing…"
+                        val putRes = auth.call { token ->
+                            api.putDeviceByUserId(userId = userId, deviceId = devId, accessToken = token)
+                        }
+                        if (putRes.isSuccess) {
+                            session.setDeviceId(devId)
+                            phase = HandshakePhase.Ready
+                            statusText = "Successfully connected to device ($devId). You can configure it."
+                        } else {
+                            phase = HandshakePhase.Error
+                            statusText = "Pairing failed: ${putRes.exceptionOrNull()?.toUserMessage() ?: "unknown error"}"
+                        }
+                    } else {
+                        if (serverPair.deviceId == devId) {
+                            session.setDeviceId(devId)
+                            phase = HandshakePhase.Ready
+                            statusText = "Successfully connected to device ($devId). You can configure it."
+                        } else {
+                            statusText = "DeviceId mismatch. Updating server…"
+                            val putRes = auth.call { token ->
+                                api.putDeviceByUserId(userId = userId, deviceId = devId, accessToken = token)
+                            }
+                            if (putRes.isSuccess) {
+                                session.setDeviceId(devId)
+                                phase = HandshakePhase.Ready
+                                statusText = "Successfully connected to device ($devId). You can configure it."
+                            } else {
+                                phase = HandshakePhase.Error
+                                statusText = "Update failed: ${putRes.exceptionOrNull()?.toUserMessage() ?: "unknown error"}"
+                            }
+                        }
+                    }
+                } else {
+                    val e = getRes.exceptionOrNull()
+                    phase = HandshakePhase.Error
+                    statusText = "Server check failed: ${e?.toUserMessage() ?: "unknown error"}"
+                }
+
+                busy = false
+            }
+        }
+
+        onDispose {
+            bleManager.setOnDeviceIdListener { }
+        }
+    }
+
+    val handshakeReady = phase == HandshakePhase.Ready
+    val buttonsEnabled = handshakeReady && !busy
+
+    // UI fields
     var ssid by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var experimentName by remember { mutableStateOf("") }
-//    var cfgB by remember { mutableStateOf("") }
     var isLedEnabled by remember { mutableStateOf(false) }
     var samplingMs by remember { mutableStateOf("") }
 
     LazyColumn(modifier = modifier.padding(16.dp)) {
+
+        // --- Handshake status block (BEFORE Wi-Fi block) ---
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Device handshake", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(6.dp))
+
+                    when (phase) {
+                        HandshakePhase.WaitingForNotify -> {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        HandshakePhase.Exchanging -> {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        HandshakePhase.Ready -> { /* no progress */ }
+                        HandshakePhase.Error -> { /* no progress */ }
+                    }
+
+                    Text(statusText)
+
+                    if (lastEspDeviceId != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("ESP deviceId: ${lastEspDeviceId!!}")
+                    }
+                    if (savedDeviceId.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Saved deviceId: $savedDeviceId")
+                    }
+
+                    if (!handshakeReady) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "You can't configure device until you fully connect to it.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
 
         item { Text("Wi-Fi Configuration", style = MaterialTheme.typography.titleLarge) }
 
@@ -142,10 +310,8 @@ fun ConfigScreen(
 
         item {
             Button(
-                onClick = {
-                    Log.d("WIFI", "Apply WiFi BUTTON clicked")
-                    onApplyWifi(ssid, password)
-                },
+                onClick = { onApplyWifi(ssid, password) },
+                enabled = buttonsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Apply Wi-Fi") }
         }
@@ -163,7 +329,8 @@ fun ConfigScreen(
                 Text("LED enabled")
                 Switch(
                     checked = isLedEnabled,
-                    onCheckedChange = { isLedEnabled = it }
+                    onCheckedChange = { isLedEnabled = it },
+                    enabled = buttonsEnabled
                 )
             }
         }
@@ -197,15 +364,16 @@ fun ConfigScreen(
                         )
                     )
                 },
+                enabled = buttonsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Apply Config") }
         }
 
         item {
             Spacer(Modifier.height(8.dp))
-
             OutlinedButton(
                 onClick = { onFinishExperiment() },
+                enabled = buttonsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Finish experiment") }
         }
