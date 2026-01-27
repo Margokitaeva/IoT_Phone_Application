@@ -25,6 +25,36 @@ class ApiClient(
     // -------- AUTH --------
 
     data class LoginResponse(val username: String, val role: String)
+    data class ExperimentInfo(
+        val experimentID: String,
+
+        val hipRomLeft: Double?,
+        val hipRomRight: Double?,
+        val kneeRomLeft: Double?,
+        val kneeRomRight: Double?,
+
+        val cadenceEst: Double?,
+        val symmetryIndex: Double?,
+
+        val pelvisPitchRom: Double?,
+        val pelvisRollRom: Double?
+    )
+
+    data class PatResult(
+        val patientId: String?,
+        val updatedAt: String?,
+
+        val hipRomLeft: Double?,
+        val hipRomRight: Double?,
+        val kneeRomLeft: Double?,
+        val kneeRomRight: Double?,
+
+        val cadenceEst: Double?,
+        val symmetryIndex: Double?,
+
+        val pelvisPitchRom: Double?,
+        val pelvisRollRom: Double?
+    )
 
     suspend fun login(username: String, password: String): Result<LoginResponse> =
         withContext(Dispatchers.IO) {
@@ -253,6 +283,90 @@ class ApiClient(
                 )
             }
         }
+
+    suspend fun patientGetExperimentsInfo(username: String): Result<List<ExperimentInfo>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/patient/getExperimentsInfo/$username")
+                    .get()
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) error("HTTP ${resp.code} $body")
+
+                    val json = JSONObject(body)
+                    val arr = json.optJSONArray("experiments") ?: JSONArray()
+
+                    buildList {
+                        for (i in 0 until arr.length()) {
+                            val o = arr.getJSONObject(i)
+
+                            add(
+                                ExperimentInfo(
+                                    experimentID = o.optString("experimentID"),
+
+                                    hipRomLeft = o.optDoubleOrNull("hip_rom_left"),
+                                    hipRomRight = o.optDoubleOrNull("hip_rom_right"),
+                                    kneeRomLeft = o.optDoubleOrNull("knee_rom_left"),
+                                    kneeRomRight = o.optDoubleOrNull("knee_rom_right"),
+
+                                    cadenceEst = o.optDoubleOrNull("cadence_est"),
+                                    symmetryIndex = o.optDoubleOrNull("symmetry_index"),
+
+                                    pelvisPitchRom = o.optDoubleOrNull("pelvis_pitch_rom"),
+                                    pelvisRollRom = o.optDoubleOrNull("pelvis_roll_rom")
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+    suspend fun patientGetPatResult(username: String, experimentId: String): Result<PatResult> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/getPatResult/$username/$experimentId")
+                    .get()
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) error("HTTP ${resp.code} $body")
+
+                    val json = JSONObject(body)
+
+                    PatResult(
+                        patientId = json.optString("patientId").ifBlank { null },
+                        updatedAt = json.optString("updatedAt").ifBlank { null },
+
+                        hipRomLeft = json.optDoubleOrNull("hipRomLeft"),
+                        hipRomRight = json.optDoubleOrNull("hipRomRight"),
+                        kneeRomLeft = json.optDoubleOrNull("kneeRomLeft"),
+                        kneeRomRight = json.optDoubleOrNull("kneeRomRight"),
+
+                        cadenceEst = json.optDoubleOrNull("cadenceEst"),
+                        symmetryIndex = json.optDoubleOrNull("symmetryIndex"),
+
+                        pelvisPitchRom = json.optDoubleOrNull("pelvisPitchRom"),
+                        pelvisRollRom = json.optDoubleOrNull("pelvisRollRom")
+                    )
+                }
+            }
+        }
+
+
+
+
+
+    // helper: чтобы нормально обрабатывать null/отсутствие поля
+    private fun JSONObject.optDoubleOrNull(key: String): Double? {
+        return if (has(key) && !isNull(key)) optDouble(key) else null
+    }
+
 
 
 

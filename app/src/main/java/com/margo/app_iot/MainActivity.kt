@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
                 // TODO: ВСТАВЬ СВОЙ URL СЕРВЕРА:
                 // пример: "http://10.0.2.2:8080" (если сервер на ПК и запускаешь эмулятор)
                 // или "http://192.168.0.10:8080" (если сервер в локальной сети)
-                val api = remember { ApiClient(baseUrl = "http://10.163.136.28:5000") }
+                val api = remember { ApiClient(baseUrl = "http://10.24.107.28:5000") }
 
                 val loggedIn by session.loggedInFlow.collectAsState(initial = false)
                 val role by session.roleFlow.collectAsState(initial = "")

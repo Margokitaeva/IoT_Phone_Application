@@ -181,54 +181,93 @@ private fun DoctorPatientDetails(
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+
+    // comment
     var comment by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var loadingComment by remember { mutableStateOf(false) }
+    var commentError by remember { mutableStateOf<String?>(null) }
     var editMode by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
 
-    fun load() {
-        loading = true
-        error = null
+    // experiments list
+    var experiments by remember { mutableStateOf(listOf<String>()) }
+    var loadingList by remember { mutableStateOf(false) }
+    var listError by remember { mutableStateOf<String?>(null) }
+    var selectedExperiment by remember { mutableStateOf<String?>(null) }
+
+    // selected experiment result
+    var result by remember { mutableStateOf<ApiClient.PatResult?>(null) }
+    var loadingResult by remember { mutableStateOf(false) }
+    var resultError by remember { mutableStateOf<String?>(null) }
+
+    fun loadComment() {
+        loadingComment = true
+        commentError = null
         scope.launch {
-            // используем patient/getComment — отдельного doctor/getComment нет
             val res = api.patientGetComment(patientName)
-            loading = false
+            loadingComment = false
             if (res.isSuccess) {
                 comment = res.getOrNull().orEmpty()
                 draft = comment
             } else {
-                error = res.exceptionOrNull()?.message ?: "Failed"
+                commentError = res.exceptionOrNull()?.message ?: "Failed to load comment"
             }
         }
     }
 
-    LaunchedEffect(patientName) { load() }
+    fun loadExperiments() {
+        loadingList = true
+        listError = null
+        scope.launch {
+            val res = api.patientGetExperiments(patientName)
+            loadingList = false
+            if (res.isSuccess) experiments = res.getOrNull().orEmpty()
+            else listError = res.exceptionOrNull()?.message ?: "Failed to load experiments"
+        }
+    }
+
+    fun loadSelectedResult(expId: String) {
+        selectedExperiment = expId
+        loadingResult = true
+        resultError = null
+        result = null
+        scope.launch {
+            val res = api.patientGetPatResult(patientName, expId)
+            loadingResult = false
+            if (res.isSuccess) result = res.getOrNull()
+            else resultError = res.exceptionOrNull()?.message ?: "Failed to load result"
+        }
+    }
+
+    LaunchedEffect(patientName) {
+        loadComment()
+        loadExperiments()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(patientName) },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("Back") }
-                },
+                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
+                    TextButton(onClick = { loadExperiments() }) { Text(if (loadingList) "." else "Refresh") }
+
                     if (!editMode) {
                         IconButton(onClick = { editMode = true; draft = comment }) {
                             Icon(Icons.Filled.Edit, contentDescription = "Edit")
                         }
                     } else {
                         IconButton(onClick = {
-                            loading = true
-                            error = null
+                            loadingComment = true
+                            commentError = null
                             scope.launch {
                                 val res = api.doctorSetComment(patientName = patientName, comment = draft)
-                                loading = false
+                                loadingComment = false
                                 if (res.isSuccess) {
                                     editMode = false
                                     comment = draft
                                 } else {
-                                    error = res.exceptionOrNull()?.message ?: "Failed to save"
+                                    commentError = res.exceptionOrNull()?.message ?: "Failed to save"
                                 }
                             }
                         }) {
@@ -243,7 +282,7 @@ private fun DoctorPatientDetails(
             Text("Comment", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(10.dp))
 
-            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
+            if (commentError != null) Text(commentError!!, color = MaterialTheme.colorScheme.error)
 
             Spacer(Modifier.height(10.dp))
 
@@ -266,8 +305,86 @@ private fun DoctorPatientDetails(
             }
 
             Spacer(Modifier.height(18.dp))
-            Text("Patient history (TODO)", style = MaterialTheme.typography.titleMedium)
-            Text("Placeholder: we will add UI when you decide the format.", style = MaterialTheme.typography.bodyMedium)
+            Text("Experiments", style = MaterialTheme.typography.titleMedium)
+
+            if (listError != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(listError!!, color = MaterialTheme.colorScheme.error)
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            if (experiments.isEmpty() && !loadingList) {
+                Text("No experiments yet.", style = MaterialTheme.typography.bodyMedium)
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
+                    items(experiments) { exp ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            onClick = { loadSelectedResult(exp) }
+                        ) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text(exp, style = MaterialTheme.typography.titleMedium)
+                                if (selectedExperiment == exp) {
+                                    Text("Selected", style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    Text("Tap to open", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text("Selected experiment result", style = MaterialTheme.typography.titleMedium)
+
+            if (loadingResult) {
+                Spacer(Modifier.height(8.dp))
+                Text("Loading result...")
+            }
+
+            if (resultError != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(resultError!!, color = MaterialTheme.colorScheme.error)
+            }
+
+            val r = result
+            if (r != null) {
+                Spacer(Modifier.height(8.dp))
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        if (r.updatedAt != null) {
+                            Text("Updated at: ${r.updatedAt}", style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.height(8.dp))
+                        }
+
+                        MetricRow("Hip Range of Motion (Left)", r.hipRomLeft)
+                        MetricRow("Hip Range of Motion (Right)", r.hipRomRight)
+                        MetricRow("Knee Range of Motion (Left)", r.kneeRomLeft)
+                        MetricRow("Knee Range of Motion (Right)", r.kneeRomRight)
+
+                        Spacer(Modifier.height(6.dp))
+                        MetricRow("Cadence (Estimated)", r.cadenceEst)
+                        MetricRow("Symmetry Index", r.symmetryIndex)
+
+                        Spacer(Modifier.height(6.dp))
+                        MetricRow("Pelvis Pitch Range of Motion", r.pelvisPitchRom)
+                        MetricRow("Pelvis Roll Range of Motion", r.pelvisRollRom)
+                    }
+                }
+            }
         }
+    }
+}
+
+// добавь внизу DoctorHome.kt (если у тебя в этом файле ещё нет MetricRow)
+@Composable
+private fun MetricRow(label: String, value: Double?) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Text(value?.let { String.format("%.4f", it) } ?: "—", style = MaterialTheme.typography.bodyMedium)
     }
 }

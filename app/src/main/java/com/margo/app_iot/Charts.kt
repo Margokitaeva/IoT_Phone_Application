@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,16 +36,46 @@ fun VisualizationScreen(
         return
     }
 
-    var samples by remember { mutableStateOf(listOf<QuaternionSample>()) }
-    var t by remember { mutableStateOf(0f) }
-
-    val onNewSample: (QuaternionSample) -> Unit = { sample ->
-        samples = (samples + sample).takeLast(200)
-    }
-
-    LaunchedEffect(Unit) {
-        bleManager.setOnQuaternionSampleListener(onNewSample)
-    }
+//    val chartsCount = 5
+//
+//    var histories by remember { mutableStateOf(List(chartsCount) { emptyList<QuaternionSample>() }) }
+//
+//    val onNewBatch: (List<QuaternionSample>) -> Unit = { batch ->
+//        val n = minOf(chartsCount, batch.size)
+//        val updated = histories.toMutableList()
+//
+//        for (i in 0 until n) {
+//            updated[i] = (updated[i] + batch[i]).takeLast(200) // 200 точек истории
+//        }
+//        histories = updated
+//    }
+//
+//    LaunchedEffect(Unit) {
+//        bleManager.setOnQuaternionBatchListener(onNewBatch)
+//    }
+//
+//    LaunchedEffect(isConnected) {
+//        if (isConnected) bleManager.enableQuaternionNotifications()
+//    }
+//
+//    // 5 графиков лучше скроллить
+//    LazyColumn(modifier = modifier.padding(16.dp)) {
+//        item {
+//            Text("Quaternions (5 charts)", style = MaterialTheme.typography.headlineSmall)
+//            Spacer(Modifier.height(12.dp))
+//        }
+//
+//        items(chartsCount) { idx ->
+//            Text("Quaternion ${idx + 1}", style = MaterialTheme.typography.titleMedium)
+//            QuaternionChart(
+//                samples = histories[idx],
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .height(240.dp)
+//            )
+//            Spacer(Modifier.height(16.dp))
+//        }
+//    }
 
     // odbieranie co jakis czas
 //    LaunchedEffect(isConnected) {
@@ -56,23 +87,49 @@ fun VisualizationScreen(
 //        }
 //    }
 
-    // po notyfikacji
+    // по notyfikacji
     LaunchedEffect(isConnected) {
         if (isConnected) {
             bleManager.enableQuaternionNotifications()
         }
     }
 
+    val chartsCount = 5
+
+// histories[i] = история для i-го графика (i-й кватернион из JSON)
+    var histories by remember { mutableStateOf(List(chartsCount) { emptyList<QuaternionSample>() }) }
+
+// слушатель пачки: JSON -> 5 кватернионов -> каждый в свой график
+    LaunchedEffect(Unit) {
+        bleManager.setOnQuaternionBatchListener { batch ->
+            val n = minOf(chartsCount, batch.size)
+            val updated = histories.toMutableList()
+
+            for (i in 0 until n) {
+                updated[i] = (updated[i] + batch[i]).takeLast(200)
+            }
+            histories = updated
+        }
+    }
+
     Column(modifier = modifier.padding(16.dp)) {
-        Text("Quaternion", style = MaterialTheme.typography.headlineSmall)
+        Text("Quaternions", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp))
 
-        QuaternionChart(
-            samples = samples,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(250.dp)
-        )
+        // 5 графиков подряд
+        for (i in 0 until chartsCount) {
+            Text("Quaternion ${i + 1}", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+
+            QuaternionChart(
+                samples = histories[i],
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(250.dp)
+            )
+
+            Spacer(Modifier.height(16.dp))
+        }
     }
 }
 

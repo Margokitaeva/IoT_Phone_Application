@@ -6,6 +6,9 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.util.Log
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
+import java.nio.charset.StandardCharsets
 
 class BleManager(
     private val context: Context,
@@ -42,6 +45,8 @@ class BleManager(
 //    private val CFG_A_UUID = shortUuid(0xFFF4)
 //    private val CFG_B_UUID = shortUuid(0xFFF5)
 
+    private val jsonRxBuffer = StringBuilder()
+
     private fun shortUuid(hex: Int): UUID =
         UUID.fromString(
             String.format(
@@ -62,6 +67,7 @@ class BleManager(
     private val writeQueue = ConfigWriteQueue()
 
     private var onQuaternionSample: ((QuaternionSample) -> Unit)? = null
+    private var onQuaternionBatch: ((List<QuaternionSample>) -> Unit)? = null
 
 //    private val configQueue = ConfigWriteQueue()
 
@@ -195,24 +201,79 @@ class BleManager(
             status: Int
         ) {
             if (status != BluetoothGatt.GATT_SUCCESS) return
+            if (characteristic.uuid != QUAT_CHAR_UUID) return
 
-            if (characteristic.uuid == QUAT_CHAR_UUID) {
-                val data = characteristic.value
+            val data = characteristic.value ?: return
 
-                // пример: 4 float по 4 байта
-                val buffer = java.nio.ByteBuffer
-                    .wrap(data)
-                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-
-                val sample = QuaternionSample(
-                    q0 = buffer.float,
-                    q1 = buffer.float,
-                    q2 = buffer.float,
-                    q3 = buffer.float
-                )
-
-                onQuaternionSample?.invoke(sample)
+            // 1) Попытка как текст (JSON может приходить кусками)
+            val chunk = try {
+                String(data, Charsets.UTF_8)
+            } catch (e: Exception) {
+                ""
             }
+
+            val looksLikeText = chunk.any { it == '{' || it == '}' || it == '[' || it == ']' || it == ':' || it == '"' }
+
+            if (looksLikeText) {
+                jsonRxBuffer.append(chunk)
+
+                val bufStr = jsonRxBuffer.toString()
+                val endIndex = bufStr.lastIndexOf('}')
+                if (endIndex != -1) {
+                    val jsonStr = bufStr.substring(0, endIndex + 1)
+
+                    jsonRxBuffer.clear()
+                    if (endIndex + 1 < bufStr.length) {
+                        jsonRxBuffer.append(bufStr.substring(endIndex + 1))
+                    }
+
+                    try {
+                        val json = JSONObject(jsonStr)
+
+                        val mpuArr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
+
+                        val batch = buildList {
+                            for (i in 0 until mpuArr.length()) {
+                                val row = mpuArr.getJSONArray(i)
+                                if (row.length() >= 4) {
+                                    add(
+                                        QuaternionSample(
+                                            q0 = row.getDouble(0).toFloat(),
+                                            q1 = row.getDouble(1).toFloat(),
+                                            q2 = row.getDouble(2).toFloat(),
+                                            q3 = row.getDouble(3).toFloat()
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        if (batch.isNotEmpty()) {
+                            onQuaternionBatch?.invoke(batch)
+
+                            // OPTIONAL: оставляем совместимость со старым UI (первый кватернион как раньше)
+//                            onQuaternionSample?.invoke(batch.first())
+                        }
+                    } catch (e: Exception) {
+                        // ignore bad JSON
+                    }
+                }
+                return
+            }
+
+            // 2) Fallback: старый бинарный формат (4 float little-endian)
+//            val buffer = java.nio.ByteBuffer
+//                .wrap(data)
+//                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+//
+//            val sample = QuaternionSample(
+//                q0 = buffer.float,
+//                q1 = buffer.float,
+//                q2 = buffer.float,
+//                q3 = buffer.float
+//            )
+//
+//            onQuaternionSample?.invoke(sample)
         }
 
         override fun onCharacteristicChanged(
@@ -220,22 +281,80 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
-            if (characteristic.uuid == QUAT_CHAR_UUID) {
+            if (characteristic.uuid != QUAT_CHAR_UUID) return
 
-                val buffer = java.nio.ByteBuffer
-                    .wrap(value)
-                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-
-                val sample = QuaternionSample(
-                    q0 = buffer.float,
-                    q1 = buffer.float,
-                    q2 = buffer.float,
-                    q3 = buffer.float
-                )
-
-                onQuaternionSample?.invoke(sample)
+            // 1) Попытка как текст (JSON может приходить кусками)
+            val chunk = try {
+                String(value, Charsets.UTF_8)
+            } catch (e: Exception) {
+                ""
             }
+
+            val looksLikeText = chunk.any { it == '{' || it == '}' || it == '[' || it == ']' || it == ':' || it == '"' }
+
+            if (looksLikeText) {
+                jsonRxBuffer.append(chunk)
+
+                val bufStr = jsonRxBuffer.toString()
+                val endIndex = bufStr.lastIndexOf('}')
+                if (endIndex != -1) {
+                    val jsonStr = bufStr.substring(0, endIndex + 1)
+
+                    jsonRxBuffer.clear()
+                    if (endIndex + 1 < bufStr.length) {
+                        jsonRxBuffer.append(bufStr.substring(endIndex + 1))
+                    }
+
+                    try {
+                        val json = JSONObject(jsonStr)
+                        val mpuArr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
+
+                        val batch = buildList {
+                            for (i in 0 until mpuArr.length()) {
+                                val row = mpuArr.optJSONArray(i) ?: continue
+                                if (row.length() >= 4) {
+                                    add(
+                                        QuaternionSample(
+                                            q0 = row.getDouble(0).toFloat(),
+                                            q1 = row.getDouble(1).toFloat(),
+                                            q2 = row.getDouble(2).toFloat(),
+                                            q3 = row.getDouble(3).toFloat()
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        if (batch.isNotEmpty()) {
+                            // ВАЖНО: графики подписаны на batch
+                            onQuaternionBatch?.invoke(batch)
+
+                            // OPTIONAL: совместимость со старым single-sample UI
+                            onQuaternionSample?.invoke(batch.first())
+                        }
+                    } catch (e: Exception) {
+                        // ignore bad JSON
+                    }
+                }
+                return
+            }
+
+            // 2) Fallback: старый бинарный формат (4 float little-endian)
+            val buffer = java.nio.ByteBuffer
+                .wrap(value)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+
+            val sample = QuaternionSample(
+                q0 = buffer.float,
+                q1 = buffer.float,
+                q2 = buffer.float,
+                q3 = buffer.float
+            )
+
+            onQuaternionSample?.invoke(sample)
         }
+
+
 
         override fun onDescriptorWrite(
             gatt: BluetoothGatt,
@@ -276,5 +395,9 @@ class BleManager(
 
     fun setOnQuaternionSampleListener(listener: (QuaternionSample) -> Unit) {
         onQuaternionSample = listener
+    }
+
+    fun setOnQuaternionBatchListener(listener: (List<QuaternionSample>) -> Unit) {
+        onQuaternionBatch = listener
     }
 }
