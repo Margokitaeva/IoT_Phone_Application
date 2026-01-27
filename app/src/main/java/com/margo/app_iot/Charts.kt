@@ -3,6 +3,7 @@ package com.margo.app_iot
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlin.collections.plus
 import kotlin.collections.takeLast
 
@@ -112,12 +114,17 @@ fun VisualizationScreen(
         }
     }
 
-    Column(modifier = modifier.padding(16.dp)) {
-        Text("Quaternions", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(12.dp))
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        item {
+            Text("Quaternions", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(12.dp))
+        }
 
-        // 5 графиков подряд
-        for (i in 0 until chartsCount) {
+        items(chartsCount) { i ->
             Text("Quaternion ${i + 1}", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(6.dp))
 

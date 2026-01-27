@@ -26,13 +26,24 @@ fun DoctorHome(
     onLogout: () -> Unit
 ) {
     val doctorId by session.usernameFlow.collectAsState(initial = "")
+    val username by session.usernameFlow.collectAsState(initial = "")
+    val role by session.roleFlow.collectAsState(initial = "")
 
     var selectedPatient by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Doctor") },
+                title = { Column {
+                    Text(
+                        text = username.ifBlank { "—" },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = role.ifBlank { "patient" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } },
                 actions = { TextButton(onClick = onLogout) { Text("Logout") } }
             )
         }

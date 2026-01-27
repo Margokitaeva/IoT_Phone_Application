@@ -40,11 +40,22 @@ fun PatientHome(
     onLogout: () -> Unit
 ) {
     var tab by remember { mutableStateOf(PatientTab.Ble) }
+    val username by session.usernameFlow.collectAsState(initial = "")
+    val role by session.roleFlow.collectAsState(initial = "")
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Patient") },
+                title = { Column {
+                    Text(
+                        text = username.ifBlank { "—" },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = role.ifBlank { "patient" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } },
                 actions = { TextButton(onClick = onLogout) { Text("Logout") } }
             )
         },

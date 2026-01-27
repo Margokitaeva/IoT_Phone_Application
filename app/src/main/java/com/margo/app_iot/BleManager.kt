@@ -4,11 +4,17 @@ import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import java.util.UUID
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
+import android.os.Handler
+import android.os.Looper
+
 
 class BleManager(
     private val context: Context,
@@ -23,6 +29,8 @@ class BleManager(
 //    fun setOnBleDebugListener(cb: ((String) -> Unit)?) {
 //        onBleDebug = cb
 //    }
+
+    private val bleHandler = Handler(Looper.getMainLooper())
 
     // ===== UUIDs =====
     // ===== Wi-Fi =====
@@ -82,6 +90,8 @@ class BleManager(
     private var onQuaternionBatch: ((List<QuaternionSample>) -> Unit)? = null
 
     private var onDeviceIdReceived: ((String) -> Unit)? = null
+
+    private val DESIRED_MTU = 500
 
 //    private val configQueue = ConfigWriteQueue()
 
@@ -257,6 +267,65 @@ class BleManager(
         }
     }
 
+    private fun decodeFloat32LeBase64(b64: String, floatsExpected: Int): FloatArray {
+        val raw = try {
+            Base64.decode(b64, Base64.NO_WRAP)
+        } catch (e: IllegalArgumentException) {
+            Base64.decode(b64.trim(), Base64.DEFAULT)
+        }
+
+        if (raw.size % 4 != 0) {
+            throw IllegalArgumentException("Raw byte length is not multiple of 4: ${raw.size}")
+        }
+
+        val actualFloats = raw.size / 4
+        if (actualFloats != floatsExpected) {
+            throw IllegalArgumentException("Float count mismatch: expected=$floatsExpected actual=$actualFloats")
+        }
+
+        val bb = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
+        return FloatArray(actualFloats) { bb.float }
+    }
+
+    private fun parseQuaternionJsonB64(json: JSONObject): List<QuaternionSample> {
+        val format = json.optString("mpuProcessedData_format", "")
+        if (format != "float32_le_base64") {
+            throw IllegalArgumentException("Unsupported format: $format")
+        }
+
+        val floatsExpected = json.optInt("mpuProcessedData_floats", -1)
+        if (floatsExpected <= 0) {
+            throw IllegalArgumentException("mpuProcessedData_floats missing/invalid: $floatsExpected")
+        }
+
+        val b64 = json.optString("mpuProcessedData_b64", "")
+        if (b64.isBlank()) return emptyList()
+
+        val floats = decodeFloat32LeBase64(b64, floatsExpected)
+
+        if (floats.size % 4 != 0) {
+            throw IllegalArgumentException("Float array length is not multiple of 4: ${floats.size}")
+        }
+
+        val out = ArrayList<QuaternionSample>(floats.size / 4)
+        var i = 0
+        while (i + 3 < floats.size) {
+            out.add(
+                QuaternionSample(
+                    q0 = floats[i],
+                    q1 = floats[i + 1],
+                    q2 = floats[i + 2],
+                    q3 = floats[i + 3]
+                )
+            )
+            i += 4
+        }
+        return out
+    }
+
+
+
+
 
     // ===== GATT CALLBACK =====
     private val gattCallback = object : BluetoothGattCallback() {
@@ -267,10 +336,23 @@ class BleManager(
             newState: Int
         ) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                gatt.discoverServices()
+                // Просим MTU. Если телефон не поддержит — вернёт false, тогда просто идём дальше.
+                val ok = gatt.requestMtu(DESIRED_MTU)
+                Log.d("BLE", "requestMtu($DESIRED_MTU) -> $ok")
+
+                if (!ok) {
+                    // если запрос не ушёл — сразу дискавер сервисов
+                    gatt.discoverServices()
+                }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 onDisconnected()
             }
+        }
+
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            Log.d("BLE", "onMtuChanged mtu=$mtu status=$status")
+            // Дальше продолжаем обычный флоу
+            gatt.discoverServices()
         }
 
         override fun onServicesDiscovered(
@@ -306,86 +388,63 @@ class BleManager(
 
             val data = characteristic.value ?: return
 
-            // 1) Попытка как текст (JSON может приходить кусками)
             val chunk = try {
                 String(data, Charsets.UTF_8)
-            } catch (e: Exception) {
-                ""
-            }
-
-            val looksLikeText = chunk.any { it == '{' || it == '}' || it == '[' || it == ']' || it == ':' || it == '"' }
-
-            if (looksLikeText) {
-                jsonRxBuffer.append(chunk)
-
-                val bufStr = jsonRxBuffer.toString()
-                val endIndex = bufStr.lastIndexOf('}')
-                if (endIndex != -1) {
-                    val jsonStr = bufStr.substring(0, endIndex + 1)
-
-                    jsonRxBuffer.clear()
-                    if (endIndex + 1 < bufStr.length) {
-                        jsonRxBuffer.append(bufStr.substring(endIndex + 1))
-                    }
-
-                    try {
-                        val json = JSONObject(jsonStr)
-
-                        val mpuArr = json.optJSONArray("mpuProcessedData") ?: JSONArray()
-
-                        val batch = buildList {
-                            for (i in 0 until mpuArr.length()) {
-                                val row = mpuArr.getJSONArray(i)
-                                if (row.length() >= 4) {
-                                    add(
-                                        QuaternionSample(
-                                            q0 = row.getDouble(0).toFloat(),
-                                            q1 = row.getDouble(1).toFloat(),
-                                            q2 = row.getDouble(2).toFloat(),
-                                            q3 = row.getDouble(3).toFloat()
-                                        )
-                                    )
-                                }
-                            }
-                        }
-
-                        if (batch.isNotEmpty()) {
-                            onQuaternionBatch?.invoke(batch)
-
-                            // OPTIONAL: оставляем совместимость со старым UI (первый кватернион как раньше)
-//                            onQuaternionSample?.invoke(batch.first())
-                        }
-                    } catch (e: Exception) {
-                        // ignore bad JSON
-                    }
-                }
+            } catch (_: Exception) {
                 return
             }
 
-            // 2) Fallback: старый бинарный формат (4 float little-endian)
-//            val buffer = java.nio.ByteBuffer
-//                .wrap(data)
-//                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-//
-//            val sample = QuaternionSample(
-//                q0 = buffer.float,
-//                q1 = buffer.float,
-//                q2 = buffer.float,
-//                q3 = buffer.float
-//            )
-//
-//            onQuaternionSample?.invoke(sample)
+            // если буфер пустой — начинаем только когда увидели начало JSON
+            if (jsonRxBuffer.isEmpty()) {
+                val start = chunk.indexOf('{')
+                if (start == -1) return
+                jsonRxBuffer.append(chunk.substring(start))
+            } else {
+                // если уже начали собирать JSON — добавляем любые куски (включая base64 без спец-символов)
+                jsonRxBuffer.append(chunk)
+            }
+
+            // пытаемся вытаскивать завершённые JSON-объекты
+            while (true) {
+                val bufStr = jsonRxBuffer.toString()
+
+                // если вдруг до '{' накопился мусор — срезаем
+                val startIdx = bufStr.indexOf('{')
+                if (startIdx == -1) {
+                    jsonRxBuffer.clear()
+                    return
+                }
+                if (startIdx > 0) {
+                    jsonRxBuffer.delete(0, startIdx)
+                }
+
+                val endIdx = jsonRxBuffer.indexOf("}")
+                if (endIdx == -1) return // ещё не пришёл конец JSON
+
+                val jsonStr = jsonRxBuffer.substring(0, endIdx + 1)
+
+                try {
+                    val json = JSONObject(jsonStr)
+                    val batch = parseQuaternionJsonB64(json)
+                    if (batch.isNotEmpty()) onQuaternionBatch?.invoke(batch)
+
+                    // удаляем обработанный JSON, оставляем хвост (если он уже пришёл)
+                    jsonRxBuffer.delete(0, endIdx + 1)
+                } catch (e: Exception) {
+                    // если '}' есть, но JSON не парсится — скорее всего это разрыв/мусор
+                    Log.w("BLE", "Bad JSON in onCharacteristicRead, drop buffer. msg=${e.message}")
+                    jsonRxBuffer.clear()
+                    return
+                }
+            }
         }
+
 
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
-//            onBleDebug?.invoke(
-//                "NOTIFY uuid=${characteristic.uuid} bytes=${value.size}"
-//            )
-
             // 1) DeviceId notify (ESP -> phone)
             if (characteristic.uuid == DEVICE_ID_CHAR_UUID) {
                 val devId = try {
@@ -395,7 +454,6 @@ class BleManager(
                 } catch (_: Exception) {
                     ""
                 }
-//                onBleDebug?.invoke("DEVICE_ID parsed: \"$devId\"")
 
                 if (devId.isNotBlank()) {
                     onDeviceIdReceived?.invoke(devId)
@@ -406,59 +464,56 @@ class BleManager(
             // 2) Quaternion JSON notify only
             if (characteristic.uuid != QUAT_CHAR_UUID) return
 
-            // JSON приходит кусками — собираем в буфер.
             val chunk = try {
                 String(value, Charsets.UTF_8)
             } catch (_: Exception) {
                 return
             }
 
-            // Если вообще не похоже на JSON — игнорируем (старые форматы больше не поддерживаем).
-            val looksLikeJson = chunk.any { it == '{' || it == '}' || it == '[' || it == ']' || it == ':' || it == '"' }
-            if (!looksLikeJson) return
-
-            jsonRxBuffer.append(chunk)
-
-            val bufStr = jsonRxBuffer.toString()
-            val endIndex = bufStr.lastIndexOf('}')
-            if (endIndex == -1) return
-
-            // Берём завершённый JSON-объект (до последней '}')
-            val jsonStr = bufStr.substring(0, endIndex + 1)
-
-            // Оставшийся хвост после '}' сохраняем на следующий раз
-            jsonRxBuffer.clear()
-            if (endIndex + 1 < bufStr.length) {
-                jsonRxBuffer.append(bufStr.substring(endIndex + 1))
+            // если буфер пустой — начинаем только когда увидели начало JSON
+            if (jsonRxBuffer.isEmpty()) {
+                val start = chunk.indexOf('{')
+                if (start == -1) return
+                jsonRxBuffer.append(chunk.substring(start))
+            } else {
+                // если уже начали собирать JSON — добавляем любые куски (включая base64 без спец-символов)
+                jsonRxBuffer.append(chunk)
             }
 
-            try {
-                val json = JSONObject(jsonStr)
-                val mpuArr = json.optJSONArray("mpuProcessedData") ?: return
+            // пытаемся вытаскивать завершённые JSON-объекты
+            while (true) {
+                val bufStr = jsonRxBuffer.toString()
 
-                val batch = buildList {
-                    for (i in 0 until mpuArr.length()) {
-                        val row = mpuArr.optJSONArray(i) ?: continue
-                        if (row.length() >= 4) {
-                            add(
-                                QuaternionSample(
-                                    q0 = row.getDouble(0).toFloat(),
-                                    q1 = row.getDouble(1).toFloat(),
-                                    q2 = row.getDouble(2).toFloat(),
-                                    q3 = row.getDouble(3).toFloat()
-                                )
-                            )
-                        }
-                    }
+                // если вдруг до '{' накопился мусор — срезаем
+                val startIdx = bufStr.indexOf('{')
+                if (startIdx == -1) {
+                    jsonRxBuffer.clear()
+                    return
+                }
+                if (startIdx > 0) {
+                    jsonRxBuffer.delete(0, startIdx)
                 }
 
-                if (batch.isNotEmpty()) {
-                    onQuaternionBatch?.invoke(batch)
+                val endIdx = jsonRxBuffer.indexOf("}")
+                if (endIdx == -1) return // ещё не пришёл конец JSON
+
+                val jsonStr = jsonRxBuffer.substring(0, endIdx + 1)
+
+                try {
+                    val json = JSONObject(jsonStr)
+                    val batch = parseQuaternionJsonB64(json)
+                    if (batch.isNotEmpty()) onQuaternionBatch?.invoke(batch)
+
+                    // удаляем обработанный JSON, оставляем хвост (если он уже пришёл)
+                    jsonRxBuffer.delete(0, endIdx + 1)
+                } catch (e: Exception) {
+                    Log.w("BLE", "Bad JSON in onCharacteristicChanged, drop buffer. msg=${e.message}")
+                    jsonRxBuffer.clear()
+                    return
                 }
-            } catch (_: Exception) {
-                // Игнорируем битый/неполный JSON
             }
         }
+
 
 
 

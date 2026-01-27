@@ -16,6 +16,10 @@ import com.margo.app_iot.ui.auth.AuthRoot
 import com.margo.app_iot.ui.doctor.DoctorHome
 import com.margo.app_iot.ui.patient.PatientHome
 import kotlinx.coroutines.launch
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
+
 
 class MainActivity : ComponentActivity() {
 
@@ -78,6 +82,32 @@ class MainActivity : ComponentActivity() {
                 val role by session.roleFlow.collectAsState(initial = "")
 
                 val scope = rememberCoroutineScope()
+
+                val lifecycleOwner = LocalLifecycleOwner.current
+
+                // чтобы observer всегда видел актуальное loggedIn/auth
+                val latestLoggedIn by rememberUpdatedState(loggedIn)
+                val latestAuth by rememberUpdatedState(auth)
+
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_STOP) {
+                            scope.launch {
+                                // 1) всегда рвём BLE (даже если уже разлогинились)
+                                bleManager.disconnectAndClose()
+
+                                // 2) logout только если реально залогинен
+                                if (latestLoggedIn) {
+                                    latestAuth.logout() // внутри он чистит session.logout()
+                                }
+                            }
+                        }
+                    }
+
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
 
                 if (!loggedIn) {
                     AuthRoot(
