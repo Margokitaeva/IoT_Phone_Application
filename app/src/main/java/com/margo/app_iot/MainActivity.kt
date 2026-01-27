@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
                 val session = remember { SessionStore(this) }
 
                 // TODO: ВСТАВЬ СВОЙ URL СЕРВЕРА
-                val api = remember { ApiClient(baseUrl = "http://10.24.107.28:5000") }
+                val api = remember { ApiClient(baseUrl = "http://10.24.107.28:3000") }
 
                 // ВАЖНО: один общий репозиторий, который делает refresh/retry
                 val auth = remember { AuthRepository(api = api, session = session) }

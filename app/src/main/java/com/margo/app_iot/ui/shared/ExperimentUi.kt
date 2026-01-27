@@ -9,7 +9,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.network.ApiClient
+import kotlin.math.abs
 
+/**
+ * ✅ Пациент: read-only, показываем референсы.
+ */
 @Composable
 fun ExperimentDetailsReadOnlyCard(
     doctorId: String?,
@@ -37,10 +41,14 @@ fun ExperimentDetailsReadOnlyCard(
         Spacer(Modifier.height(2.dp))
         Text("Metrics", style = MaterialTheme.typography.titleSmall)
 
-        MetricsTable(metrics = metrics)
+        // ✅ пациенту показываем refs
+        MetricsTable(metrics = metrics, showReferences = true)
     }
 }
 
+/**
+ * ✅ Врач: может редактировать комментарий, референсы НЕ показываем.
+ */
 @Composable
 fun ExperimentDetailsEditorCard(
     doctorId: String?,
@@ -79,38 +87,140 @@ fun ExperimentDetailsEditorCard(
 
         Spacer(Modifier.height(2.dp))
         Text("Metrics", style = MaterialTheme.typography.titleSmall)
-        MetricsTable(metrics = metrics)
+
+        // ✅ врачу refs не показываем
+        MetricsTable(metrics = metrics, showReferences = false)
     }
 }
 
+/**
+ * showReferences = true  -> показываем Ref диапазон и статус (OK/LOW/HIGH)
+ * showReferences = false -> показываем только значения
+ */
 @Composable
-fun MetricsTable(metrics: ApiClient.ExperimentMetrics?) {
+fun MetricsTable(
+    metrics: ApiClient.ExperimentMetrics?,
+    showReferences: Boolean
+) {
     if (metrics == null) {
         Text("—")
         return
     }
 
+    // Референсы (для gait-метрик). Можешь поправить диапазоны под свою методику.
+    val refs = remember {
+        mapOf(
+            "hip_rom_left" to RefRange(42.0, 53.0, "°"),
+            "hip_rom_right" to RefRange(42.0, 53.0, "°"),
+            "knee_rom_left" to RefRange(56.0, 61.0, "°"),
+            "knee_rom_right" to RefRange(56.0, 61.0, "°"),
+            "cadence_est" to RefRange(90.0, 120.0, " spm"),
+            // если у тебя symmetry_index — % асимметрии (0 = идеально)
+            "symmetry_index" to RefRange(0.0, 10.0, " %"),
+            "pelvis_pitch_rom" to RefRange(1.0, 2.0, "°"),
+            "pelvis_roll_rom" to RefRange(6.0, 11.0, "°"),
+        )
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        MetricRow("hip_rom_left", metrics.hip_rom_left)
-        MetricRow("hip_rom_right", metrics.hip_rom_right)
-        MetricRow("knee_rom_left", metrics.knee_rom_left)
-        MetricRow("knee_rom_right", metrics.knee_rom_right)
-        MetricRow("cadence_est", metrics.cadence_est)
-        MetricRow("symmetry_index", metrics.symmetry_index)
-        MetricRow("pelvis_pitch_rom", metrics.pelvis_pitch_rom)
-        MetricRow("pelvis_roll_rom", metrics.pelvis_roll_rom)
-        MetricRow("created_at", metrics.created_at)
-        MetricRow("commented_at", metrics.commented_at)
+        MetricRow("hip_rom_left", metrics.hip_rom_left, ref = refs["hip_rom_left"].takeIf { showReferences })
+        MetricRow("hip_rom_right", metrics.hip_rom_right, ref = refs["hip_rom_right"].takeIf { showReferences })
+        MetricRow("knee_rom_left", metrics.knee_rom_left, ref = refs["knee_rom_left"].takeIf { showReferences })
+        MetricRow("knee_rom_right", metrics.knee_rom_right, ref = refs["knee_rom_right"].takeIf { showReferences })
+        MetricRow("cadence_est", metrics.cadence_est, ref = refs["cadence_est"].takeIf { showReferences })
+        MetricRow("symmetry_index", metrics.symmetry_index, ref = refs["symmetry_index"].takeIf { showReferences })
+        MetricRow("pelvis_pitch_rom", metrics.pelvis_pitch_rom, ref = refs["pelvis_pitch_rom"].takeIf { showReferences })
+        MetricRow("pelvis_roll_rom", metrics.pelvis_roll_rom, ref = refs["pelvis_roll_rom"].takeIf { showReferences })
+
+        // даты — без refs
+        MetricRow("created_at", metrics.created_at, ref = null)
+        MetricRow("commented_at", metrics.commented_at, ref = null)
     }
 }
 
+private data class RefRange(
+    val min: Double? = null,
+    val max: Double? = null,
+    val unit: String = ""
+) {
+    fun text(): String {
+        val a = min
+        val b = max
+        return when {
+            a != null && b != null -> "Ref: ${fmt(a)}–${fmt(b)}$unit"
+            a != null -> "Ref: ≥${fmt(a)}$unit"
+            b != null -> "Ref: ≤${fmt(b)}$unit"
+            else -> ""
+        }
+    }
+
+    private fun fmt(x: Double): String {
+        val r = x.toInt().toDouble()
+        return if (abs(x - r) < 1e-9) x.toInt().toString() else String.format("%.1f", x)
+    }
+}
+
+private enum class MetricFlag { OK, LOW, HIGH, NA }
+
+private fun flag(value: Double?, ref: RefRange?): MetricFlag {
+    if (value == null || ref == null) return MetricFlag.NA
+    ref.min?.let { if (value < it) return MetricFlag.LOW }
+    ref.max?.let { if (value > it) return MetricFlag.HIGH }
+    return MetricFlag.OK
+}
+
 @Composable
-private fun MetricRow(label: String, value: Any?) {
+private fun MetricRow(
+    label: String,
+    value: Any?,
+    ref: RefRange?
+) {
+    val number = (value as? Number)?.toDouble()
+    val f = flag(number, ref)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
-        Text(value?.toString()?.takeIf { it.isNotBlank() } ?: "—", style = MaterialTheme.typography.bodyMedium)
+
+        Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+            val valueText = when (value) {
+                null -> "—"
+                is String -> value.takeIf { it.isNotBlank() } ?: "—"
+                is Number -> {
+                    val d = value.toDouble()
+                    val r = d.toInt().toDouble()
+                    if (abs(d - r) < 1e-9) d.toInt().toString() else String.format("%.2f", d)
+                }
+                else -> value.toString()
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(valueText, style = MaterialTheme.typography.bodyMedium)
+
+                if (ref != null && f != MetricFlag.NA) {
+                    val chipLabel = when (f) {
+                        MetricFlag.OK -> "OK"
+                        MetricFlag.LOW -> "LOW"
+                        MetricFlag.HIGH -> "HIGH"
+                        MetricFlag.NA -> ""
+                    }
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(chipLabel) }
+                    )
+                }
+            }
+
+            val refText = ref?.text().orEmpty()
+            if (refText.isNotBlank()) {
+                Text(
+                    refText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
