@@ -31,6 +31,8 @@ class BleManager(
     private val EXP_NAME_CHAR_UUID      = shortUuid(0xFFF5)
     private val SAMPLING_MS_CHAR_UUID      = shortUuid(0xFFF6)
     private val CONFIG_APPLY_CHAR_UUID = shortUuid(0xFFF7)
+    // TODO: rename to match ESP32 firmware naming
+    private val FINISH_EXPERIMENT_CHAR_UUID  = shortUuid(0xFFFB)
 
     // data
     private val DATA_SERVICE_UUID = shortUuid(0xFFF8)
@@ -166,6 +168,39 @@ class BleManager(
 
         writeQueue.start(g)
     }
+
+    fun finishExperiment() {
+        val g = gatt
+        if (g == null) {
+            Log.e("BLE", "finishExperiment: gatt == null")
+            return
+        }
+
+        // тот же сервис, что и для config
+        val service = g.getService(CONFIG_SERVICE_UUID)
+        if (service == null) {
+            Log.e("BLE", "finishExperiment: config service not found: $CONFIG_SERVICE_UUID")
+            return
+        }
+
+        // новая характеристика внутри этого же сервиса
+        val ch = service.getCharacteristic(FINISH_EXPERIMENT_CHAR_UUID)
+        if (ch == null) {
+            Log.e("BLE", "finishExperiment: characteristic not found: $FINISH_EXPERIMENT_CHAR_UUID")
+            return
+        }
+
+        try {
+            writeQueue.clear()
+            writeQueue.enqueue(ch, byteArrayOf(1))
+            writeQueue.start(g)
+
+            Log.i("BLE", "finishExperiment: sent 1 to $FINISH_EXPERIMENT_CHAR_UUID")
+        } catch (e: Exception) {
+            Log.e("BLE", "finishExperiment: write failed", e)
+        }
+    }
+
 
     // ===== GATT CALLBACK =====
     private val gattCallback = object : BluetoothGattCallback() {

@@ -101,6 +101,7 @@ fun ConfigScreen(
     isConnected: Boolean,
     onApplyWifi: (String, String) -> Unit,
     onApplyConfig: (Map<String, String>) -> Unit,
+    onFinishExperiment: () -> Unit,
     isConfigApplied: Boolean
 ) {
     if (!isConnected) {
@@ -198,6 +199,15 @@ fun ConfigScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Apply Config") }
+        }
+
+        item {
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = { onFinishExperiment() },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Finish experiment") }
         }
     }
 }

@@ -145,6 +145,7 @@ private fun PatientConfigTab(
         isConnected = isConnected,
         onApplyWifi = { ssid, pass -> bleManager.sendWifi(ssid, pass) },
         onApplyConfig = { cfg -> bleManager.sendConfig(cfg) },
+        onFinishExperiment = { bleManager.finishExperiment() },
         isConfigApplied = false
     )
 }
