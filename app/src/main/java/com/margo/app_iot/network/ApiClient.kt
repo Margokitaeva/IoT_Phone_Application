@@ -94,7 +94,7 @@ class ApiClient(
 
                 http.newCall(req).execute().use { resp ->
                     val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
 
                     val json = JSONObject(text)
                     val userJson = json.getJSONObject("user")
@@ -130,7 +130,7 @@ class ApiClient(
 
                 http.newCall(req).execute().use { resp ->
                     val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
 
                     // 201
                     val json = JSONObject(text)
@@ -156,7 +156,7 @@ class ApiClient(
 
                 http.newCall(req).execute().use { resp ->
                     val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
 
                     val json = JSONObject(text)
                     RefreshResponse(
@@ -185,7 +185,7 @@ class ApiClient(
                 http.newCall(req).execute().use { resp ->
                     if (resp.code == 204) return@use
                     val text = resp.body?.string().orEmpty()
-                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
                 }
             }.map { Unit }
         }
