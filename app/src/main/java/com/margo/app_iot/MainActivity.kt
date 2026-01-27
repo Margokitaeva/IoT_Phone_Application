@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
+import com.margo.app_iot.network.AuthRepository
 import com.margo.app_iot.ui.auth.AuthRoot
 import com.margo.app_iot.ui.doctor.DoctorHome
 import com.margo.app_iot.ui.patient.PatientHome
@@ -18,7 +19,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
-    // ===== UI STATE (твои текущие) ===== :contentReference[oaicite:1]{index=1}
+    // ===== UI STATE =====
     private val scanResults = mutableStateListOf<ScanResult>()
     private val isConnected = mutableStateOf(false)
     private val connectedDeviceName = mutableStateOf<String?>(null)
@@ -67,15 +68,14 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val session = remember { SessionStore(this) }
 
-
-                // TODO: ВСТАВЬ СВОЙ URL СЕРВЕРА:
-                // пример: "http://10.0.2.2:8080" (если сервер на ПК и запускаешь эмулятор)
-                // или "http://192.168.0.10:8080" (если сервер в локальной сети)
+                // TODO: ВСТАВЬ СВОЙ URL СЕРВЕРА
                 val api = remember { ApiClient(baseUrl = "http://10.24.107.28:5000") }
+
+                // ВАЖНО: один общий репозиторий, который делает refresh/retry
+                val auth = remember { AuthRepository(api = api, session = session) }
 
                 val loggedIn by session.loggedInFlow.collectAsState(initial = false)
                 val role by session.roleFlow.collectAsState(initial = "")
-                val username by session.usernameFlow.collectAsState(initial = "")
 
                 val scope = rememberCoroutineScope()
 
@@ -83,12 +83,13 @@ class MainActivity : ComponentActivity() {
                     AuthRoot(
                         api = api,
                         session = session,
-                        onAuthed = { /* state will update via DataStore */ }
+                        onAuthed = { /* state updates via DataStore */ }
                     )
                 } else {
                     if (role == "patient") {
                         PatientHome(
                             api = api,
+                            auth = auth,
                             session = session,
                             bleManager = bleManager,
                             permissionLauncher = permissionLauncher,
@@ -96,13 +97,14 @@ class MainActivity : ComponentActivity() {
                             devices = scanResults,
                             isConnected = isConnected.value,
                             connectedDeviceName = connectedDeviceName.value,
-                            onLogout = { scope.launch { session.logout() } }
+                            onLogout = { scope.launch { auth.logout() } }
                         )
                     } else {
                         DoctorHome(
                             api = api,
+                            auth = auth,
                             session = session,
-                            onLogout = { scope.launch { session.logout() } }
+                            onLogout = { scope.launch { auth.logout() } }
                         )
                     }
                 }

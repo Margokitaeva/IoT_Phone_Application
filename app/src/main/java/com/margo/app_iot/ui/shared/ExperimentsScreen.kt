@@ -11,28 +11,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.network.ApiClient
+import com.margo.app_iot.network.AuthRepository
 import kotlinx.coroutines.launch
 
-/**
- * Общий экран “эксперименты пользователя”:
- * - Загружает список experimentIds по userId
- * - По клику раскрывает карточку и грузит info по experimentId
- * - В режиме doctor: дает редактировать comment и сохранять через onSaveComment
- *
- * Реальные сетевые вызовы:
- * - api.getExperimentsByUserId(userId, accessToken)
- * - api.getExperimentInfo(experimentId, accessToken)
- *
- * Сохранение comment специально через callback, чтобы:
- * - у врача дергать PATCH /experiments/{id}/comment
- * - у пациента вообще не показывать Save
- */
 @Composable
 fun ExperimentsScreen(
     api: ApiClient,
-    accessToken: String,
+    auth: AuthRepository,
     ownerUserId: String,
-    doctorIdLabel: String? = null, // подпись “doctor X” (может быть null)
+    doctorIdLabel: String? = null,
     editableComment: Boolean,
     onSaveComment: (suspend (experimentId: String, comment: String) -> Result<Unit>)? = null,
     title: String = "Experiments",
@@ -54,11 +41,13 @@ fun ExperimentsScreen(
     var savingExpId by remember { mutableStateOf<String?>(null) }
 
     fun refreshExperiments() {
-        if (ownerUserId.isBlank() || accessToken.isBlank()) return
+        if (ownerUserId.isBlank()) return
         loadingList = true
         listError = null
         scope.launch {
-            val res = api.getExperimentsByUserId(userId = ownerUserId, accessToken = accessToken)
+            val res = auth.call { token ->
+                api.getExperimentsByUserId(userId = ownerUserId, accessToken = token)
+            }
             loadingList = false
             if (res.isSuccess) {
                 experimentIds = res.getOrNull()?.experimentIds ?: emptyList()
@@ -69,13 +58,14 @@ fun ExperimentsScreen(
     }
 
     fun loadInfo(expId: String, force: Boolean = false) {
-        if (accessToken.isBlank()) return
         if (!force && infoCache.containsKey(expId)) return
 
         loadingInfoId = expId
         infoError = null
         scope.launch {
-            val res = api.getExperimentInfo(experimentId = expId, accessToken = accessToken)
+            val res = auth.call { token ->
+                api.getExperimentInfo(experimentId = expId, accessToken = token)
+            }
             loadingInfoId = null
 
             if (res.isSuccess) {
@@ -106,22 +96,19 @@ fun ExperimentsScreen(
 
         savingExpId = null
         if (res.isSuccess) {
-            // после успешного save — перезагрузим info, чтобы подтянуть updated comment/commented_at
             loadInfo(expId, force = true)
         } else {
             saveError = res.exceptionOrNull()?.message ?: "Failed to save comment"
         }
     }
 
-    LaunchedEffect(ownerUserId, accessToken) {
-        if (ownerUserId.isNotBlank() && accessToken.isNotBlank()) {
+    LaunchedEffect(ownerUserId) {
+        if (ownerUserId.isNotBlank()) {
             refreshExperiments()
         }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-
-        // header
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -136,10 +123,7 @@ fun ExperimentsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(onClick = { refreshExperiments() }, enabled = !loadingList) {
                     if (loadingList) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
-                        )
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                     }
                     Text("Refresh list")
@@ -151,18 +135,11 @@ fun ExperimentsScreen(
                         if (expId != null) loadInfo(expId, force = true)
                     },
                     enabled = expandedExpId != null && loadingInfoId == null
-                ) {
-                    Text("Refresh info")
-                }
+                ) { Text("Refresh info") }
             }
         }
 
         Spacer(Modifier.height(12.dp))
-
-        if (accessToken.isBlank()) {
-            Text("No access token. Please login again.", color = MaterialTheme.colorScheme.error)
-            return@Column
-        }
 
         if (listError != null) {
             Text(listError!!, color = MaterialTheme.colorScheme.error)
@@ -189,14 +166,12 @@ fun ExperimentsScreen(
                     onClick = { toggle(expId) }
                 ) {
                     Column(Modifier.padding(12.dp)) {
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(expId, style = MaterialTheme.typography.titleMedium)
-
-                            // TODO: show experiment start time here (right top / bottom) when backend provides it
+                            // TODO: show experiment start time here when backend provides it
                         }
 
                         if (expanded) {
@@ -207,10 +182,7 @@ fun ExperimentsScreen(
                             when {
                                 isLoadingThis && info == null -> {
                                     Row {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp
-                                        )
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                         Spacer(Modifier.width(10.dp))
                                         Text("Loading info…")
                                     }
@@ -244,10 +216,7 @@ fun ExperimentsScreen(
                                         if (isSavingThis) {
                                             Spacer(Modifier.height(8.dp))
                                             Row {
-                                                CircularProgressIndicator(
-                                                    modifier = Modifier.size(18.dp),
-                                                    strokeWidth = 2.dp
-                                                )
+                                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                                 Spacer(Modifier.width(10.dp))
                                                 Text("Saving…")
                                             }

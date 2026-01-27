@@ -10,22 +10,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
-import com.margo.app_iot.ui.shared.ExperimentDetailsEditorCard
+import com.margo.app_iot.network.AuthRepository
 import kotlinx.coroutines.launch
 
 @Composable
 fun DoctorHome(
     api: ApiClient,
+    auth: AuthRepository,
     session: SessionStore,
     onLogout: () -> Unit
 ) {
     val doctorId by session.usernameFlow.collectAsState(initial = "")
-    val accessToken by session.accessTokenFlow.collectAsState(initial = "")
 
     var selectedPatient by remember { mutableStateOf<String?>(null) }
 
@@ -41,15 +40,15 @@ fun DoctorHome(
             if (selectedPatient == null) {
                 DoctorPatientsList(
                     api = api,
+                    auth = auth,
                     doctorId = doctorId,
-                    accessToken = accessToken,
                     onSelectPatient = { selectedPatient = it }
                 )
             } else {
                 DoctorPatientDetails(
                     api = api,
+                    auth = auth,
                     doctorId = doctorId,
-                    accessToken = accessToken,
                     patientId = selectedPatient!!,
                     onBack = { selectedPatient = null }
                 )
@@ -61,8 +60,8 @@ fun DoctorHome(
 @Composable
 private fun DoctorPatientsList(
     api: ApiClient,
+    auth: AuthRepository,
     doctorId: String,
-    accessToken: String,
     onSelectPatient: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -79,11 +78,13 @@ private fun DoctorPatientsList(
     var deleting by remember { mutableStateOf(false) }
 
     fun refresh() {
-        if (doctorId.isBlank() || accessToken.isBlank()) return
+        if (doctorId.isBlank()) return
         loading = true
         error = null
         scope.launch {
-            val res = api.getPatientsByDoctorId(doctorId = doctorId, accessToken = accessToken)
+            val res = auth.call { token ->
+                api.getPatientsByDoctorId(doctorId = doctorId, accessToken = token)
+            }
             loading = false
             if (res.isSuccess) {
                 patients = res.getOrNull()?.patients ?: emptyList()
@@ -93,8 +94,8 @@ private fun DoctorPatientsList(
         }
     }
 
-    LaunchedEffect(doctorId, accessToken) {
-        if (doctorId.isNotBlank() && accessToken.isNotBlank()) refresh()
+    LaunchedEffect(doctorId) {
+        if (doctorId.isNotBlank()) refresh()
     }
 
     Scaffold(
@@ -110,11 +111,6 @@ private fun DoctorPatientsList(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            if (accessToken.isBlank()) {
-                Text("No access token. Please login again.", color = MaterialTheme.colorScheme.error)
-                return@Column
-            }
-
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Patients", style = MaterialTheme.typography.headlineSmall)
                 TextButton(onClick = { refresh() }) { Text(if (loading) "..." else "Refresh") }
@@ -139,9 +135,7 @@ private fun DoctorPatientsList(
 
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(patients) { p ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -160,9 +154,7 @@ private fun DoctorPatientsList(
                             TextButton(
                                 onClick = { confirmDeletePatient = p },
                                 enabled = !deleting
-                            ) {
-                                Text("Delete")
-                            }
+                            ) { Text("Delete") }
                         }
                     }
                 }
@@ -170,7 +162,6 @@ private fun DoctorPatientsList(
         }
     }
 
-    // Add patient dialog
     if (showAddDialog) {
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
@@ -193,11 +184,13 @@ private fun DoctorPatientsList(
                         }
                         scope.launch {
                             error = null
-                            val res = api.addPatientToDoctor(
-                                doctorId = doctorId,
-                                patientId = patientId,
-                                accessToken = accessToken
-                            )
+                            val res = auth.call { token ->
+                                api.addPatientToDoctor(
+                                    doctorId = doctorId,
+                                    patientId = patientId,
+                                    accessToken = token
+                                )
+                            }
                             if (res.isSuccess) {
                                 showAddDialog = false
                                 newPatientId = ""
@@ -209,13 +202,10 @@ private fun DoctorPatientsList(
                     }
                 ) { Text("Add") }
             },
-            dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
-            }
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancel") } }
         )
     }
 
-    // Confirm delete dialog
     val toDelete = confirmDeletePatient
     if (toDelete != null) {
         AlertDialog(
@@ -229,11 +219,13 @@ private fun DoctorPatientsList(
                         deleting = true
                         deleteError = null
                         scope.launch {
-                            val res = api.deletePatientFromDoctor(
-                                doctorId = doctorId,
-                                patientId = toDelete,
-                                accessToken = accessToken
-                            )
+                            val res = auth.call { token ->
+                                api.deletePatientFromDoctor(
+                                    doctorId = doctorId,
+                                    patientId = toDelete,
+                                    accessToken = token
+                                )
+                            }
                             deleting = false
                             if (res.isSuccess) {
                                 confirmDeletePatient = null
@@ -258,25 +250,25 @@ private fun DoctorPatientsList(
 @Composable
 private fun DoctorPatientDetails(
     api: ApiClient,
+    auth: AuthRepository,
     doctorId: String,
-    accessToken: String,
     patientId: String,
     onBack: () -> Unit
 ) {
     com.margo.app_iot.ui.shared.ExperimentsScreen(
         api = api,
-        accessToken = accessToken,
+        auth = auth,
         ownerUserId = patientId,
         doctorIdLabel = doctorId,
         editableComment = true,
         onSaveComment = { expId, newComment ->
-            // ApiClient.setExperimentComment возвращает Result<SetCommentResponse>,
-            // а ExperimentsScreen ожидает Result<Unit> -> мапаем.
-            api.setExperimentComment(
-                experimentId = expId,
-                comment = newComment,
-                accessToken = accessToken
-            ).map { Unit }
+            auth.call { token ->
+                api.setExperimentComment(
+                    experimentId = expId,
+                    comment = newComment,
+                    accessToken = token
+                ).map { Unit }
+            }
         },
         title = "Experiments: $patientId",
         onBack = onBack

@@ -10,16 +10,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.network.ApiClient
 
-/**
- * Общий UI для patient/doctor.
- * Пациент: read-only карточка.
- * Доктор: editor карточка (может менять comment).
- *
- * Типы взяты из ApiClient:
- * - ApiClient.ExperimentMetrics
- * - comment: String?
- */
-
 @Composable
 fun ExperimentDetailsReadOnlyCard(
     doctorId: String?,
@@ -28,7 +18,6 @@ fun ExperimentDetailsReadOnlyCard(
     onRefresh: (() -> Unit)? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -43,10 +32,7 @@ fun ExperimentDetailsReadOnlyCard(
         }
 
         val commentText = comment?.takeIf { it.isNotBlank() } ?: "—"
-        AssistChip(
-            onClick = {},
-            label = { Text(commentText) }
-        )
+        AssistChip(onClick = {}, label = { Text(commentText) })
 
         Spacer(Modifier.height(2.dp))
         Text("Metrics", style = MaterialTheme.typography.titleSmall)
@@ -66,7 +52,6 @@ fun ExperimentDetailsEditorCard(
     var draft by rememberSaveable(initialComment) { mutableStateOf(initialComment.orEmpty()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
