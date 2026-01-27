@@ -1,6 +1,7 @@
 package com.margo.app_iot.network
 
 import com.margo.app_iot.ExperimentDataResponse
+import com.margo.app_iot.network.ApiClient.ApiHttpException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -617,5 +618,55 @@ class ApiClient(
             val body = resp.body?.string().orEmpty()
             error("HTTP ${resp.code} $body")
         }
+    }
+
+}
+
+// --- User-friendly error mapping ---
+fun Throwable.toUserMessage(): String {
+    val http = this as? ApiHttpException
+    if (http != null) {
+        val apiError = http.tryParseApiError()
+        return when (http.code) {
+            400 -> apiError ?: "Invalid input. Please check the fields."
+            401 -> apiError ?: "Unauthorized. Please login again."
+            403 -> apiError ?: "You don’t have permission to do this."
+            404 -> apiError ?: "Not found."
+            409 -> apiError ?: "Conflict. Please try another value."
+            else -> apiError ?: "Server error (${http.code}). Please try again."
+        }
+    }
+
+    // network / other
+    val msg = this.message ?: return "Unexpected error. Please try again."
+    return when {
+        msg.contains("Unable to resolve host", ignoreCase = true) -> "No internet connection / server unreachable."
+        msg.contains("timeout", ignoreCase = true) -> "Request timeout. Please try again."
+        else -> "Unexpected error: $msg"
+    }
+}
+
+/** tries to extract {"error":"..."} from ApiHttpException.body */
+private fun ApiHttpException.tryParseApiError(): String? {
+    return try {
+        val json = org.json.JSONObject(body)
+        val err = json.optString("error")
+        err.takeIf { it.isNotBlank() }?.let { normalizeErrorText(it, code) }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun normalizeErrorText(err: String, code: Int): String {
+    // точечные сообщения (самое важное: login 401)
+    return when {
+        code == 401 && err.equals("Invalid credentials", ignoreCase = true) ->
+            "Wrong login or password."
+
+        // можно дополнять позже:
+        code == 409 && err.contains("already exists", ignoreCase = true) ->
+            "User already exists."
+
+        else -> err
     }
 }

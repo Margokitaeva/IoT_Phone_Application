@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
 import kotlinx.coroutines.launch
+import com.margo.app_iot.network.toUserMessage
 
 @Composable
 fun AuthRoot(
@@ -81,7 +82,8 @@ private fun LoginScreen(
                         session.setDeviceId("") // deviceId через BLE handshake
                         onAuthed()
                     } else {
-                        error = res.exceptionOrNull()?.message ?: "Login failed"
+                        val e = res.exceptionOrNull()
+                        error = e?.toUserMessage() ?: "Login failed."
                     }
                 }
             },
@@ -163,7 +165,7 @@ private fun SignUpScreen(
                     val reg = api.register(username.trim(), password, role)
                     if (reg.isFailure) {
                         loading = false
-                        error = reg.exceptionOrNull()?.message ?: "Register failed"
+                        error = reg.exceptionOrNull()?.toUserMessage() ?: "Register failed."
                         return@launch
                     }
 
@@ -176,6 +178,9 @@ private fun SignUpScreen(
                         session.setTokens(payload.accessToken, payload.refreshToken)
                         session.setDeviceId("")
                         onAuthed()
+                    }
+                    else {
+                        error = log.exceptionOrNull()?.toUserMessage() ?: "Login failed."
                     }
                 }
             },

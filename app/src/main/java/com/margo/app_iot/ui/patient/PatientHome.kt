@@ -23,6 +23,7 @@ import com.margo.app_iot.VisualizationScreen
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
 import com.margo.app_iot.network.AuthRepository
+import com.margo.app_iot.network.toUserMessage
 import kotlinx.coroutines.launch
 
 @Composable
@@ -176,7 +177,7 @@ fun PatientBleTab(
                             pairingStatus = "Paired OK. DeviceId saved: $devId"
                         } else {
                             val e = putRes.exceptionOrNull()
-                            pairingStatus = "Pairing failed: ${e?.message ?: "unknown error"}"
+                            pairingStatus = "Pairing failed: ${e?.toUserMessage() ?: "unknown error"}"
                         }
                     } else {
                         // compare
@@ -196,7 +197,7 @@ fun PatientBleTab(
                                 pairingStatus = "Server updated. DeviceId saved: $devId"
                             } else {
                                 val e = putRes.exceptionOrNull()
-                                pairingStatus = "Failed to update server: ${e?.message ?: "unknown error"}"
+                                pairingStatus = "Failed to update server: ${e?.toUserMessage() ?: "unknown error"}"
                             }
                         }
                     }
@@ -205,7 +206,7 @@ fun PatientBleTab(
                     if (e is ApiClient.ApiHttpException && e.code == 403) {
                         pairingStatus = "Forbidden (403): not allowed to access pairing."
                     } else {
-                        pairingStatus = "Failed to check server: ${e?.message ?: "unknown error"}"
+                        pairingStatus = "Failed to check server: ${e?.toUserMessage() ?: "unknown error"}"
                     }
                 }
 
@@ -305,7 +306,7 @@ fun PatientHistoryTab(
             if (res.isSuccess) {
                 doctorId = res.getOrNull()?.doctorId
             } else {
-                doctorError = res.exceptionOrNull()?.message ?: "Failed to load doctor"
+                doctorError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to load doctor"
             }
         }
     }
@@ -369,7 +370,7 @@ fun PatientExperiments3DTab(
                     selectedExpId = experimentIds.first()
                 }
             } else {
-                listError = res.exceptionOrNull()?.message ?: "Failed to load experiments"
+                listError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to load experiments"
             }
         }
     }
@@ -387,7 +388,7 @@ fun PatientExperiments3DTab(
             if (res.isSuccess) {
                 lastData = res.getOrNull()
             } else {
-                dataError = res.exceptionOrNull()?.message ?: "Failed to load experiment data"
+                dataError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to load experiment data"
             }
         }
     }

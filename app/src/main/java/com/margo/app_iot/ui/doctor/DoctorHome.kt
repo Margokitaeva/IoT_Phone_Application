@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.margo.app_iot.data.SessionStore
 import com.margo.app_iot.network.ApiClient
 import com.margo.app_iot.network.AuthRepository
+import com.margo.app_iot.network.toUserMessage
 import kotlinx.coroutines.launch
 
 @Composable
@@ -89,7 +90,7 @@ private fun DoctorPatientsList(
             if (res.isSuccess) {
                 patients = res.getOrNull()?.patients ?: emptyList()
             } else {
-                error = res.exceptionOrNull()?.message ?: "Failed to load patients"
+                error = res.exceptionOrNull()?.toUserMessage() ?: "Failed to load patients"
             }
         }
     }
@@ -196,7 +197,7 @@ private fun DoctorPatientsList(
                                 newPatientId = ""
                                 refresh()
                             } else {
-                                error = res.exceptionOrNull()?.message ?: "Failed to add patient"
+                                error = res.exceptionOrNull()?.toUserMessage() ?: "Failed to add patient"
                             }
                         }
                     }
@@ -231,7 +232,7 @@ private fun DoctorPatientsList(
                                 confirmDeletePatient = null
                                 refresh()
                             } else {
-                                deleteError = res.exceptionOrNull()?.message ?: "Failed to delete patient"
+                                deleteError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to delete patient"
                             }
                         }
                     }

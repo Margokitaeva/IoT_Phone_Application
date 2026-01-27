@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.margo.app_iot.network.ApiClient
 import com.margo.app_iot.network.AuthRepository
 import kotlinx.coroutines.launch
+import com.margo.app_iot.network.toUserMessage
 
 @Composable
 fun ExperimentsScreen(
@@ -52,7 +53,7 @@ fun ExperimentsScreen(
             if (res.isSuccess) {
                 experimentIds = res.getOrNull()?.experimentIds ?: emptyList()
             } else {
-                listError = res.exceptionOrNull()?.message ?: "Failed to load experiments"
+                listError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to load experiments"
             }
         }
     }
@@ -72,7 +73,7 @@ fun ExperimentsScreen(
                 val info = res.getOrNull()
                 if (info != null) infoCache[expId] = info
             } else {
-                infoError = res.exceptionOrNull()?.message ?: "Failed to load experiment info"
+                infoError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to load experiment info"
             }
         }
     }
@@ -98,7 +99,7 @@ fun ExperimentsScreen(
         if (res.isSuccess) {
             loadInfo(expId, force = true)
         } else {
-            saveError = res.exceptionOrNull()?.message ?: "Failed to save comment"
+            saveError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to save comment"
         }
     }
 
