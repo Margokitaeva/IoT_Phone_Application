@@ -76,6 +76,16 @@ class BleManager(
         scanner.startScan(scanCallback)
     }
 
+    fun stopScan() {
+        try {
+            scanner.stopScan(scanCallback)
+        } catch (e: SecurityException) {
+            Log.e("BLE", "stopScan: missing permission", e)
+        } catch (e: Exception) {
+            Log.e("BLE", "stopScan failed", e)
+        }
+    }
+
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(type: Int, result: ScanResult) {
             onDeviceFound(result)

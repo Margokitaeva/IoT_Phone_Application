@@ -13,8 +13,7 @@ import androidx.compose.ui.unit.dp
 fun BleConnectScreen(
     modifier: Modifier = Modifier,
     onRequestPermissions: () -> Unit,
-    onAddDevice: () -> Unit,
-    onDeleteDevice: () -> Unit,
+    onStopScan: () -> Unit,
     devices: List<ScanResult>,
     onDeviceSelected: (ScanResult) -> Unit,
     isConnected: Boolean,
@@ -26,22 +25,6 @@ fun BleConnectScreen(
             .fillMaxSize()
     ) {
 
-        OutlinedButton(
-            onClick = onAddDevice,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Add device")
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        OutlinedButton(
-            onClick = onDeleteDevice,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Delete device")
-        }
-
         Spacer(Modifier.height(8.dp))
 
         Button(
@@ -49,6 +32,15 @@ fun BleConnectScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Scan BLE devices")
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onStopScan,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Stop scanning")
         }
 
         if (isConnected) {

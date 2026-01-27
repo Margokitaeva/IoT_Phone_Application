@@ -123,137 +123,16 @@ private fun PatientBleTab(
     val username by session.usernameFlow.collectAsState(initial = "")
     val deviceId by session.deviceIdFlow.collectAsState(initial = "")
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var addDeviceId by remember { mutableStateOf("") }
-    var addError by remember { mutableStateOf<String?>(null) }
-    var adding by remember { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    var deleteError by remember { mutableStateOf<String?>(null) }
-    var deleting by remember { mutableStateOf(false) }
-
     // твой текущий экран Connect — просто вынесла
     com.margo.app_iot.BleConnectScreen(
         modifier = Modifier.fillMaxSize(),
         onRequestPermissions = { permissionLauncher.launch(blePermissions) },
+        onStopScan = { bleManager.stopScan() },
         devices = devices,
-        onAddDevice = {
-            addDeviceId = ""
-            addError = null
-            showAddDialog = true
-        },
-        onDeleteDevice = {
-            deleteError = null
-            if (deviceId.isBlank()) {
-                deleteError = "No device linked. Add a device first."
-            } else {
-                showDeleteConfirm = true
-            }
-        },
         onDeviceSelected = onConnect,
         isConnected = isConnected,
         connectedDeviceName = connectedDeviceName
     )
-
-    if (showAddDialog) {
-        AlertDialog(
-            onDismissRequest = { if (!adding) showAddDialog = false },
-            title = { Text("Add device") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = addDeviceId,
-                        onValueChange = { addDeviceId = it },
-                        label = { Text("DeviceID") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (addError != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(addError!!, color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    enabled = !adding && addDeviceId.isNotBlank() && username.isNotBlank(),
-                    onClick = {
-                        adding = true
-                        addError = null
-
-                        scope.launch {
-                            val res = api.patientAddDevice(
-                                username = username,
-                                deviceId = addDeviceId.trim()
-                            )
-
-                            adding = false
-
-                            if (res.isSuccess) {
-                                session.setDeviceId(addDeviceId.trim())
-                                showAddDialog = false
-                            } else {
-                                val msg = res.exceptionOrNull()?.message.orEmpty()
-                                addError =
-                                    if (msg.contains("DEVICE_ALREADY_EXISTS")) {
-                                        "You already have a device. Delete it first, then add a new one."
-                                    } else {
-                                        "Failed to add device: $msg"
-                                    }
-                            }
-                        }
-                    }
-                ) { Text(if (adding) "Adding..." else "Confirm") }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    enabled = !adding,
-                    onClick = { showAddDialog = false }
-                ) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { if (!deleting) showDeleteConfirm = false },
-            title = { Text("Delete device?") },
-            text = { Text("Are you sure you want to delete this device from your account?") },
-            confirmButton = {
-                Button(
-                    enabled = !deleting,
-                    onClick = {
-                        deleting = true
-                        scope.launch {
-                            val res = api.patientDeleteDevice(
-                                patientName = username,
-                                deviceId = deviceId.trim()
-                            )
-                            deleting = false
-
-                            if (res.isSuccess) {
-                                session.clearDeviceId()
-//                                bleManager.deleteDevice()
-                                showDeleteConfirm = false
-                            } else {
-                                deleteError = res.exceptionOrNull()?.message ?: "Delete failed"
-                                showDeleteConfirm = false
-                            }
-                        }
-                    }
-                ) { Text(if (deleting) "Deleting..." else "Delete") }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    enabled = !deleting,
-                    onClick = { showDeleteConfirm = false }
-                ) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (deleteError != null) {
-        Spacer(Modifier.height(8.dp))
-        Text(deleteError!!, color = MaterialTheme.colorScheme.error)
-    }
 }
 
 @Composable
