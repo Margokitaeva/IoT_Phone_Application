@@ -34,6 +34,10 @@ class BleManager(
     // TODO: rename to match ESP32 firmware naming
     private val FINISH_EXPERIMENT_CHAR_UUID  = shortUuid(0xFFFB)
 
+    // TODO: согласовать/переименовать UUID/названия с ESP
+    private val DEVICE_ID_CHAR_UUID = shortUuid(0xFFFC)   // notify/read: ESP -> phone (deviceId)
+    private val USER_ID_CHAR_UUID   = shortUuid(0xFFFD)   // write: phone -> ESP (userId/username)
+
     // data
     private val DATA_SERVICE_UUID = shortUuid(0xFFF8)
     private val QUAT_CHAR_UUID   = shortUuid(0xFFF9)
@@ -70,6 +74,8 @@ class BleManager(
 
     private var onQuaternionSample: ((QuaternionSample) -> Unit)? = null
     private var onQuaternionBatch: ((List<QuaternionSample>) -> Unit)? = null
+
+    private var onDeviceIdReceived: ((String) -> Unit)? = null
 
 //    private val configQueue = ConfigWriteQueue()
 
@@ -143,6 +149,20 @@ class BleManager(
     }
 
     // ===== WRITE CONFIG =====
+
+    fun sendUserId(userId: String) {
+        val g = gatt ?: return
+        val service = g.getService(CONFIG_SERVICE_UUID) ?: return
+        val ch = service.getCharacteristic(USER_ID_CHAR_UUID) ?: return
+
+        val bytes = userId.toByteArray(StandardCharsets.UTF_8)
+
+        writeQueue.clear()
+        writeQueue.enqueue(ch, bytes)
+        writeQueue.start(g)
+    }
+
+
     fun sendConfig(cfg: Map<String, String>) {
         val g = gatt ?: return
         val service = g.getService(CONFIG_SERVICE_UUID) ?: return
@@ -326,6 +346,20 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
+
+            if (characteristic.uuid == DEVICE_ID_CHAR_UUID) {
+                val devId = try {
+                    String(value, Charsets.UTF_8)
+                        .trim()
+                        .trim('\u0000')
+                } catch (_: Exception) { "" }
+
+                if (devId.isNotBlank()) {
+                    onDeviceIdReceived?.invoke(devId)
+                }
+                return
+            }
+
             if (characteristic.uuid != QUAT_CHAR_UUID) return
 
             // 1) Попытка как текст (JSON может приходить кусками)
@@ -436,6 +470,22 @@ class BleManager(
         g.writeDescriptor(cccd)
     }
 
+    fun enableDeviceIdNotifications() {
+        val g = gatt ?: return
+        val service = g.getService(CONFIG_SERVICE_UUID) ?: return
+        val ch = service.getCharacteristic(DEVICE_ID_CHAR_UUID) ?: return
+
+        g.setCharacteristicNotification(ch, true)
+
+        val cccd = ch.getDescriptor(
+            UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        ) ?: return
+
+        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        g.writeDescriptor(cccd)
+    }
+
+
 
 
     fun setOnQuaternionSampleListener(listener: (QuaternionSample) -> Unit) {
@@ -444,5 +494,9 @@ class BleManager(
 
     fun setOnQuaternionBatchListener(listener: (List<QuaternionSample>) -> Unit) {
         onQuaternionBatch = listener
+    }
+
+    fun setOnDeviceIdListener(listener: (String) -> Unit) {
+        onDeviceIdReceived = listener
     }
 }

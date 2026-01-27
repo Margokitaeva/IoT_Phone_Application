@@ -77,13 +77,7 @@ private fun LoginScreen(
                     if (res.isSuccess) {
                         val roleFromServer = res.getOrNull()!!.role
                         session.setLoggedIn(u, roleFromServer)
-
-                        if (roleFromServer == "patient") {
-                            val devRes = api.patientGetDeviceId(u)
-                            session.setDeviceId(devRes.getOrNull().orEmpty())
-                        } else {
-                            session.setDeviceId("")
-                        }
+                        session.setDeviceId("")
 
                         onAuthed()
                     } else {

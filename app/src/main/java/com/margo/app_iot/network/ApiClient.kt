@@ -56,6 +56,16 @@ class ApiClient(
         val pelvisRollRom: Double?
     )
 
+    data class UserDevicePair(
+        val userId: String,
+        val deviceId: String,
+        val pairedAt: String?
+    )
+
+
+    class ApiHttpException(val code: Int, val body: String) : RuntimeException("HTTP $code $body")
+
+
     suspend fun login(username: String, password: String): Result<LoginResponse> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -359,15 +369,77 @@ class ApiClient(
         }
 
 
-
-
-
     // helper: чтобы нормально обрабатывать null/отсутствие поля
     private fun JSONObject.optDoubleOrNull(key: String): Double? {
         return if (has(key) && !isNull(key)) optDouble(key) else null
     }
 
 
+    // -------- PAIRING --------
+    suspend fun getDeviceByUserId(userId: String, accessToken: String): Result<UserDevicePair?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/users/$userId/device")
+                    .get()
+                    .apply {
+                        if (accessToken.isNotBlank()) {
+                            header("Authorization", "Bearer $accessToken")
+                        }
+                    }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+
+                    // 404 = нормальная ветка "Device not paired"
+                    if (resp.code == 404) return@use null
+
+                    // 403 и прочие — как ошибка
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    UserDevicePair(
+                        userId = json.getString("userId"),
+                        deviceId = json.getString("deviceId"),
+                        pairedAt = json.optString("pairedAt").ifBlank { null }
+                    )
+                }
+            }
+        }
+
+
+    suspend fun putDeviceByUserId(userId: String, deviceId: String, accessToken: String): Result<UserDevicePair> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject()
+                    .put("deviceId", deviceId)
+                    .toString()
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/users/$userId/device")
+                    .put(body.toRequestBody(jsonType))
+                    .apply {
+                        header("Content-Type", "application/json")
+                        if (accessToken.isNotBlank()) {
+                            header("Authorization", "Bearer $accessToken")
+                        }
+                    }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) throw ApiHttpException(resp.code, text)
+
+                    val json = JSONObject(text)
+                    UserDevicePair(
+                        userId = json.getString("userId"),
+                        deviceId = json.getString("deviceId"),
+                        pairedAt = json.optString("pairedAt").ifBlank { null }
+                    )
+                }
+            }
+        }
 
 
 

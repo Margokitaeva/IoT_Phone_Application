@@ -108,7 +108,7 @@ private enum class PatientTab(val icon: androidx.compose.ui.graphics.vector.Imag
 }
 
 @Composable
-private fun PatientBleTab(
+fun PatientBleTab(
     api: ApiClient,
     session: SessionStore,
     permissionLauncher: ActivityResultLauncher<Array<String>>,
@@ -120,20 +120,159 @@ private fun PatientBleTab(
     bleManager: BleManager
 ) {
     val scope = rememberCoroutineScope()
-    val username by session.usernameFlow.collectAsState(initial = "")
-    val deviceId by session.deviceIdFlow.collectAsState(initial = "")
 
-    // твой текущий экран Connect — просто вынесла
-    com.margo.app_iot.BleConnectScreen(
-        modifier = Modifier.fillMaxSize(),
-        onRequestPermissions = { permissionLauncher.launch(blePermissions) },
-        onStopScan = { bleManager.stopScan() },
-        devices = devices,
-        onDeviceSelected = onConnect,
-        isConnected = isConnected,
-        connectedDeviceName = connectedDeviceName
-    )
+    val username by session.usernameFlow.collectAsState(initial = "")
+    val savedDeviceId by session.deviceIdFlow.collectAsState(initial = "")
+
+    // TODO (tokens): когда добавим токены — брать accessToken из SessionStore и передавать сюда
+    val accessToken = ""
+
+    var pairingStatus by remember { mutableStateOf<String?>(null) }
+    var lastEspDeviceId by remember { mutableStateOf<String?>(null) }
+    var pairingInProgress by remember { mutableStateOf(false) }
+
+    // Подписка на уведомления deviceId от ESP
+    LaunchedEffect(Unit) {
+        bleManager.setOnDeviceIdListener { devId ->
+            // защита от дублей/флуда
+            if (devId.isBlank()) return@setOnDeviceIdListener
+            if (pairingInProgress && devId == lastEspDeviceId) return@setOnDeviceIdListener
+
+            lastEspDeviceId = devId
+
+            scope.launch {
+                if (username.isBlank()) {
+                    pairingStatus = "Pairing error: username(userId) is empty."
+                    return@launch
+                }
+
+                pairingInProgress = true
+                pairingStatus = "ESP deviceId received: $devId. Sending userId to ESP..."
+
+                // 1) Отправляем userId в ESP (как ты описала — только после того, как ESP прислал deviceId)
+                bleManager.sendUserId(username)
+
+                // 2) Проверяем deviceId на сервере
+                pairingStatus = "Checking device on server..."
+                val getRes = api.getDeviceByUserId(
+                    userId = username,
+                    accessToken = accessToken
+                )
+
+                if (getRes.isSuccess) {
+                    val serverPair = getRes.getOrNull() // null == 404 "Device not paired"
+
+                    if (serverPair == null) {
+                        // 404 -> делаем UPSERT
+                        pairingStatus = "Server says: not paired (404). Pairing with ESP id..."
+                        val putRes = api.putDeviceByUserId(
+                            userId = username,
+                            deviceId = devId,
+                            accessToken = accessToken
+                        )
+
+                        if (putRes.isSuccess) {
+                            session.setDeviceId(devId)
+                            pairingStatus = "Paired OK. DeviceId saved: $devId"
+                        } else {
+                            val e = putRes.exceptionOrNull()
+                            pairingStatus = "Pairing failed: ${e?.message ?: "unknown error"}"
+                        }
+                    } else {
+                        // На сервере есть deviceId -> сравниваем
+                        if (serverPair.deviceId == devId) {
+                            session.setDeviceId(devId)
+                            pairingStatus = "Paired OK (server matches). DeviceId saved: $devId"
+                        } else {
+                            pairingStatus =
+                                "Mismatch. Server: ${serverPair.deviceId}, ESP: $devId. Updating server..."
+
+                            val putRes = api.putDeviceByUserId(
+                                userId = username,
+                                deviceId = devId,
+                                accessToken = accessToken
+                            )
+
+                            if (putRes.isSuccess) {
+                                session.setDeviceId(devId)
+                                pairingStatus = "Server updated. Paired OK. DeviceId saved: $devId"
+                            } else {
+                                val e = putRes.exceptionOrNull()
+                                pairingStatus = "Failed to update server: ${e?.message ?: "unknown error"}"
+                            }
+                        }
+                    }
+                } else {
+                    // Ошибка GET
+                    val e = getRes.exceptionOrNull()
+                    if (e is ApiClient.ApiHttpException && e.code == 403) {
+                        pairingStatus = "Forbidden (403): you are not allowed to access device pairing."
+                    } else {
+                        pairingStatus = "Failed to check server: ${e?.message ?: "unknown error"}"
+                    }
+                }
+
+                pairingInProgress = false
+            }
+        }
+    }
+
+    // Когда подключились по BLE — включаем notify на deviceId характеристику
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            bleManager.enableDeviceIdNotifications()
+            pairingStatus = "Connected. Press the button on ESP to send deviceId..."
+        } else {
+            pairingInProgress = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+
+        // Connect UI (без Add/Delete)
+        com.margo.app_iot.BleConnectScreen(
+            modifier = Modifier.fillMaxSize(),
+            onRequestPermissions = { permissionLauncher.launch(blePermissions) },
+            onStopScan = { bleManager.stopScan() },
+            devices = devices,
+            onDeviceSelected = onConnect,
+            isConnected = isConnected,
+            connectedDeviceName = connectedDeviceName
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // Pairing status panel
+        if (pairingStatus != null || savedDeviceId.isNotBlank() || lastEspDeviceId != null) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Pairing", style = MaterialTheme.typography.titleMedium)
+
+                    Spacer(Modifier.height(6.dp))
+                    Text("UserId: ${if (username.isBlank()) "—" else username}")
+
+                    Spacer(Modifier.height(4.dp))
+                    Text("ESP deviceId: ${lastEspDeviceId ?: "—"}")
+
+                    Spacer(Modifier.height(4.dp))
+                    Text("Saved deviceId: ${if (savedDeviceId.isBlank()) "—" else savedDeviceId}")
+
+                    if (pairingStatus != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(pairingStatus!!)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+    }
 }
+
 
 @Composable
 private fun PatientConfigTab(
