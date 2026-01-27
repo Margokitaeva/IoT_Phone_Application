@@ -71,14 +71,14 @@ private fun LoginScreen(
                 loading = true
                 scope.launch {
                     val u = username.trim()
-                    val res = api.login(username = u, password = password)
+                    val res = api.login(userId = u, password = password)
                     loading = false
 
                     if (res.isSuccess) {
-                        val roleFromServer = res.getOrNull()!!.role
-                        session.setLoggedIn(u, roleFromServer)
-                        session.setDeviceId("")
-
+                        val payload = res.getOrNull()!!
+                        session.setLoggedIn(payload.user.userId, payload.user.role)
+                        session.setTokens(payload.accessToken, payload.refreshToken)
+                        session.setDeviceId("") // deviceId через BLE handshake
                         onAuthed()
                     } else {
                         error = res.exceptionOrNull()?.message ?: "Login failed"
@@ -168,13 +168,14 @@ private fun SignUpScreen(
                     }
 
                     // login right after register
-                    val log = api.login(username.trim(), password)
+                    val log = api.login(userId = username.trim(), password = password)
                     loading = false
                     if (log.isSuccess) {
-                        session.setLoggedIn(username.trim(), role)
+                        val payload = log.getOrNull()!!
+                        session.setLoggedIn(payload.user.userId, payload.user.role)
+                        session.setTokens(payload.accessToken, payload.refreshToken)
+                        session.setDeviceId("")
                         onAuthed()
-                    } else {
-                        error = log.exceptionOrNull()?.message ?: "Login after register failed"
                     }
                 }
             },

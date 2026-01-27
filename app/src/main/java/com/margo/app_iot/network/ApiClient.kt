@@ -24,7 +24,19 @@ class ApiClient(
 
     // -------- AUTH --------
 
-    data class LoginResponse(val username: String, val role: String)
+    data class AuthedUser(val userId: String, val role: String)
+
+    data class LoginResponse(
+        val accessToken: String,
+        val refreshToken: String,
+        val user: AuthedUser
+    )
+
+    data class RefreshResponse(
+        val accessToken: String,
+        val refreshToken: String
+    )
+
     data class ExperimentInfo(
         val experimentID: String,
 
@@ -66,16 +78,16 @@ class ApiClient(
     class ApiHttpException(val code: Int, val body: String) : RuntimeException("HTTP $code $body")
 
 
-    suspend fun login(username: String, password: String): Result<LoginResponse> =
+    suspend fun login(userId: String, password: String): Result<LoginResponse> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val body = JSONObject()
-                    .put("Username", username)
-                    .put("Password", password)
+                    .put("userId", userId)
+                    .put("password", password)
                     .toString()
 
                 val req = Request.Builder()
-                    .url("$baseUrl/auth/login")
+                    .url("$baseUrl/api/v1/auth/login")
                     .post(body.toRequestBody(jsonType))
                     .build()
 
@@ -84,24 +96,100 @@ class ApiClient(
                     if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
 
                     val json = JSONObject(text)
+                    val userJson = json.getJSONObject("user")
+
                     LoginResponse(
-                        username = json.optString("Username", username),
-                        role = json.getString("Role")
+                        accessToken = json.getString("accessToken"),
+                        refreshToken = json.getString("refreshToken"),
+                        user = AuthedUser(
+                            userId = userJson.getString("userId"),
+                            role = userJson.getString("role")
+                        )
                     )
                 }
             }
         }
 
-    suspend fun register(username: String, password: String, role: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject()
-                .put("Username", username)
-                .put("Password", password)
-                .put("Role", role) // patient/doctor
-                .toString()
 
-            postNoBody("$baseUrl/auth/register", body, okCodes = setOf(200), err400 = "Bad request")
+    data class RegisterResponse(val userId: String, val role: String)
+
+    suspend fun register(userId: String, password: String, role: String): Result<RegisterResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject()
+                    .put("userId", userId)
+                    .put("password", password)
+                    .put("role", role)
+                    .toString()
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/auth/register")
+                    .post(body.toRequestBody(jsonType))
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+
+                    // 201
+                    val json = JSONObject(text)
+                    RegisterResponse(
+                        userId = json.getString("userId"),
+                        role = json.getString("role")
+                    )
+                }
+            }
         }
+
+    suspend fun refresh(refreshToken: String): Result<RefreshResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject()
+                    .put("refreshToken", refreshToken)
+                    .toString()
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/auth/refresh")
+                    .post(body.toRequestBody(jsonType))
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+
+                    val json = JSONObject(text)
+                    RefreshResponse(
+                        accessToken = json.getString("accessToken"),
+                        refreshToken = json.getString("refreshToken")
+                    )
+                }
+            }
+        }
+
+    suspend fun logout(accessToken: String, refreshToken: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val body = JSONObject()
+                    .put("refreshToken", refreshToken)
+                    .toString()
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/auth/logout")
+                    .post(body.toRequestBody(jsonType))
+                    .apply {
+                        if (accessToken.isNotBlank()) header("Authorization", "Bearer $accessToken")
+                    }
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    if (resp.code == 204) return@use
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) error("HTTP ${resp.code} $text")
+                }
+            }.map { Unit }
+        }
+
+
 
     // -------- PATIENT --------
 

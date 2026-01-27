@@ -17,12 +17,19 @@ class SessionStore(private val context: Context) {
         val USERNAME = stringPreferencesKey("username")
         val ROLE = stringPreferencesKey("role") // patient/doctor
         val DEVICE_ID = stringPreferencesKey("device_id")
+
+        val ACCESS_TOKEN = stringPreferencesKey("access_token")
+        val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
+
     }
 
     val loggedInFlow: Flow<Boolean> = context.sessionDataStore.data.map { it[Keys.LOGGED_IN] ?: false }
     val usernameFlow: Flow<String> = context.sessionDataStore.data.map { it[Keys.USERNAME] ?: "" }
     val roleFlow: Flow<String> = context.sessionDataStore.data.map { it[Keys.ROLE] ?: "" }
     val deviceIdFlow: Flow<String> = context.sessionDataStore.data.map { it[Keys.DEVICE_ID] ?: "" }
+
+    val accessTokenFlow: Flow<String> = context.sessionDataStore.data.map { it[Keys.ACCESS_TOKEN] ?: "" }
+    val refreshTokenFlow: Flow<String> = context.sessionDataStore.data.map { it[Keys.REFRESH_TOKEN] ?: "" }
 
     suspend fun setLoggedIn(username: String, role: String) {
         context.sessionDataStore.edit {
@@ -47,6 +54,23 @@ class SessionStore(private val context: Context) {
             it.remove(Keys.ROLE)
             // deviceId можно оставить или чистить — я очищу:
             it.remove(Keys.DEVICE_ID)
+            it.remove(Keys.ACCESS_TOKEN)
+            it.remove(Keys.REFRESH_TOKEN)
         }
     }
+
+    suspend fun setTokens(accessToken: String, refreshToken: String) {
+        context.sessionDataStore.edit {
+            it[Keys.ACCESS_TOKEN] = accessToken
+            it[Keys.REFRESH_TOKEN] = refreshToken
+        }
+    }
+
+    suspend fun clearTokens() {
+        context.sessionDataStore.edit {
+            it.remove(Keys.ACCESS_TOKEN)
+            it.remove(Keys.REFRESH_TOKEN)
+        }
+    }
+
 }

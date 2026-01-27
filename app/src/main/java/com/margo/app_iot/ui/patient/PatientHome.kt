@@ -124,8 +124,7 @@ fun PatientBleTab(
     val username by session.usernameFlow.collectAsState(initial = "")
     val savedDeviceId by session.deviceIdFlow.collectAsState(initial = "")
 
-    // TODO (tokens): когда добавим токены — брать accessToken из SessionStore и передавать сюда
-    val accessToken = ""
+    val accessToken by session.accessTokenFlow.collectAsState(initial = "")
 
     var pairingStatus by remember { mutableStateOf<String?>(null) }
     var lastEspDeviceId by remember { mutableStateOf<String?>(null) }
