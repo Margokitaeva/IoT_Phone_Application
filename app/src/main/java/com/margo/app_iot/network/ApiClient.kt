@@ -10,6 +10,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class ApiClient(
@@ -22,6 +23,7 @@ class ApiClient(
         .build()
 
     private val jsonType = "application/json; charset=utf-8".toMediaType()
+    private fun encPathSegment(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     // -------- AUTH --------
 
@@ -398,6 +400,28 @@ class ApiClient(
                         comment = json.optStringOrNull("comment"),
                         metrics = metrics
                     )
+                }
+            }
+        }
+
+    suspend fun experimentExists(experimentId: String, accessToken: String): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val encId = encPathSegment(experimentId)
+
+                val req = Request.Builder()
+                    .url("$baseUrl/api/v1/experiments/$encId/info")
+                    .get()
+                    .header("Authorization", "Bearer $accessToken")
+                    .build()
+
+                http.newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    when {
+                        resp.code == 404 -> false
+                        resp.isSuccessful -> true
+                        else -> throw ApiHttpException(resp.code, text)
+                    }
                 }
             }
         }

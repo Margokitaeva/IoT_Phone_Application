@@ -22,7 +22,8 @@ fun BleConnectScreen(
     devices: List<ScanResult>,
     onDeviceSelected: (ScanResult) -> Unit,
     isConnected: Boolean,
-    connectedDeviceName: String?
+    connectedDeviceName: String?,
+    onDisconnect: () -> Unit
 ) {
     Column(
         modifier = modifier
@@ -48,6 +49,7 @@ fun BleConnectScreen(
             Text("Stop scanning")
         }
 
+
         if (isConnected) {
             Spacer(Modifier.height(12.dp))
             Text(
@@ -55,6 +57,15 @@ fun BleConnectScreen(
                 color = MaterialTheme.colorScheme.tertiary,
                 style = MaterialTheme.typography.titleMedium
             )
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = onDisconnect,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Disconnect")
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -277,6 +288,9 @@ fun ConfigScreen(
     var experimentName by remember { mutableStateOf("") }
 //    var isLedEnabled by remember { mutableStateOf(false) }
     var samplingMs by remember { mutableStateOf("") }
+    var experimentNameError by remember { mutableStateOf<String?>(null) }
+    var applyConfigSuccess by remember { mutableStateOf<String?>(null) }
+
 
     LazyColumn(modifier = modifier.padding(16.dp)) {
 
@@ -374,8 +388,18 @@ fun ConfigScreen(
         item {
             OutlinedTextField(
                 value = experimentName,
-                onValueChange = { experimentName = it },
+                onValueChange = {
+                    experimentName = it
+                    experimentNameError = null
+                    applyConfigSuccess = null
+                },
                 label = { Text("Experiment name") },
+                isError = experimentNameError != null,
+                supportingText = {
+                    if (experimentNameError != null) {
+                        Text(experimentNameError!!)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -383,7 +407,10 @@ fun ConfigScreen(
         item {
             OutlinedTextField(
                 value = samplingMs,
-                onValueChange = { samplingMs = it.filter { ch -> ch.isDigit() } },
+                onValueChange = {
+                    samplingMs = it.filter { ch -> ch.isDigit() }
+                    applyConfigSuccess = null
+                },
                 label = { Text("Sampling interval (ms)") },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -392,20 +419,75 @@ fun ConfigScreen(
         item {
             Button(
                 onClick = {
-                    onApplyConfig(
-                        linkedMapOf(
-//                            "isLedEnabled" to if (isLedEnabled) "1" else "0",
-                            "samplingMs" to samplingMs,
-                            "experimentName" to experimentName
+//                    onApplyConfig(
+//                        linkedMapOf(
+////                            "isLedEnabled" to if (isLedEnabled) "1" else "0",
+//                            "samplingMs" to samplingMs,
+//                            "experimentName" to experimentName
+//                        )
+//                    )
+                    applyConfigSuccess = null
 
+                    val exp = experimentName.trim()
+                    val smp = samplingMs.trim()
 
+                    if (exp.isBlank()) {
+                        experimentNameError = "Please enter experiment name."
+                        return@Button
+                    }
+                    if (smp.isBlank()) {
+                        experimentNameError = "Please enter sampling interval (ms)."
+                        return@Button
+                    }
+
+                    scope.launch {
+                        busy = true
+                        experimentNameError = null
+                        applyConfigSuccess = "Checking experiment name on server…"
+
+                        val existsRes = auth.call { token ->
+                            api.experimentExists(exp, token)
+                        }
+
+                        if (existsRes.isFailure) {
+                            busy = false
+                            experimentNameError = "Server check failed: ${existsRes.exceptionOrNull()?.toUserMessage() ?: "unknown error"}"
+                            return@launch
+                        }
+
+                        val exists = existsRes.getOrNull() == true
+                        if (exists) {
+                            busy = false
+                            experimentNameError = "Experiment with name '$exp' already exists. Choose another name."
+                            return@launch
+                        }
+
+                        // 3) всё ок -> отправляем конфиг на ESP
+                        onApplyConfig(
+                            linkedMapOf(
+                                "samplingMs" to smp,
+                                "experimentName" to exp
+                            )
                         )
-                    )
+
+                        busy = false
+                        applyConfigSuccess = "Config sent to device."
+                        experimentNameError = null
+                    }
                 },
                 enabled = buttonsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Apply Config") }
+
+            if (applyConfigSuccess != null) {
+                Text(
+                    text = applyConfigSuccess!!,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
+
+
 
         item {
             Spacer(Modifier.height(8.dp))
