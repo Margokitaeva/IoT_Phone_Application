@@ -14,6 +14,8 @@ import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import android.os.Handler
 import android.os.Looper
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 
 class BleManager(
@@ -66,6 +68,11 @@ class BleManager(
 //    private val CFG_B_UUID = shortUuid(0xFFF5)
 
     private val jsonRxBuffer = StringBuilder()
+
+    private val _handshakeOk = MutableStateFlow(false)
+    val handshakeOk: StateFlow<Boolean> = _handshakeOk
+
+    fun setHandshakeOk(v: Boolean) { _handshakeOk.value = v }
 
     private fun shortUuid(hex: Int): UUID =
         UUID.fromString(
@@ -357,6 +364,8 @@ class BleManager(
             newState: Int
         ) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                _handshakeOk.value = false
+
                 // Просим MTU. Если телефон не поддержит — вернёт false, тогда просто идём дальше.
                 val ok = gatt.requestMtu(DESIRED_MTU)
                 Log.d("BLE", "requestMtu($DESIRED_MTU) -> $ok")
@@ -366,6 +375,7 @@ class BleManager(
                     gatt.discoverServices()
                 }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                _handshakeOk.value = false
                 onDisconnected()
             }
         }

@@ -115,7 +115,7 @@ fun ConfigScreen(
     onApplyWifi: (String, String) -> Unit,
     onApplyConfig: (Map<String, String>) -> Unit,
     onFinishExperiment: () -> Unit,
-) {
+)   {
     if (!isConnected) {
         Column(modifier.padding(16.dp)) {
             Text("Connect BLE device first (in BLE tab)")
@@ -129,28 +129,51 @@ fun ConfigScreen(
     val savedDeviceId by session.deviceIdFlow.collectAsState(initial = "")
 
     var phase by remember { mutableStateOf(HandshakePhase.WaitingForNotify) }
-    var statusText by remember { mutableStateOf("Waiting for confirmation from device…") }
+    var statusText by remember { mutableStateOf("Waiting for confirmation from device...") }
     var lastEspDeviceId by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
+    val handshakeOk by bleManager.handshakeOk.collectAsState(initial = false)
+
+//    var handshakeOk by remember { mutableStateOf(false) }
+
     // если уже спарено (есть deviceId в сессии) — считаем handshake done
-    LaunchedEffect(savedDeviceId) {
-        if (savedDeviceId.isNotBlank()) {
-            phase = HandshakePhase.Ready
-            statusText = "Successfully connected to device ($savedDeviceId). You can configure it."
-            busy = false
-        }
-    }
+//    LaunchedEffect(handshakeOk) {
+//        if (handshakeOk) {
+//            phase = HandshakePhase.Ready
+//            statusText = "Successfully connected to device ($savedDeviceId). You can configure it."
+//            busy = false
+//        }
+//    }
 
     // при заходе на экран — включаем notify и ждём deviceId
     LaunchedEffect(isConnected) {
-        if (isConnected && savedDeviceId.isBlank()) {
-            phase = HandshakePhase.WaitingForNotify
-            statusText = "Waiting for confirmation from device… (press the button on device)"
+        if (isConnected) {
+            // новый коннект => handshake всегда заново
+//            bleManager.setHandshakeOk(false)
+//            handshakeOk = false
             busy = false
+            lastEspDeviceId = null
+            phase = HandshakePhase.WaitingForNotify
+
+            statusText =
+                if (savedDeviceId.isNotBlank())
+                    "Saved deviceId: $savedDeviceId\nWaiting for confirmation from device… (press the button on device)"
+                else
+                    "Waiting for confirmation from device… (press the button on device)"
+
             bleManager.enableDeviceIdNotifications()
+        } else {
+            // если отвалились — тоже сброс
+//            handshakeOk = false
+//            bleManager.setHandshakeOk(false)
+            busy = false
+            lastEspDeviceId = null
+            phase = HandshakePhase.WaitingForNotify
+            statusText = "Connect BLE device first (in BLE tab)"
         }
     }
+
 
     // слушаем deviceId notify (handshake живёт тут!)
     DisposableEffect(Unit) {
@@ -192,15 +215,22 @@ fun ConfigScreen(
                         if (putRes.isSuccess) {
                             session.setDeviceId(devId)
                             phase = HandshakePhase.Ready
+                            bleManager.setHandshakeOk(true)
+//                            handshakeOk = true;
                             statusText = "Successfully connected to device ($devId). You can configure it."
+
                         } else {
                             phase = HandshakePhase.Error
+                            bleManager.setHandshakeOk(false)
+//                            handshakeOk = false;
                             statusText = "Pairing failed: ${putRes.exceptionOrNull()?.toUserMessage() ?: "unknown error"}"
                         }
                     } else {
                         if (serverPair.deviceId == devId) {
                             session.setDeviceId(devId)
                             phase = HandshakePhase.Ready
+                            bleManager.setHandshakeOk(true)
+//                            handshakeOk = true;
                             statusText = "Successfully connected to device ($devId). You can configure it."
                         } else {
                             statusText = "DeviceId mismatch. Updating server…"
@@ -210,9 +240,13 @@ fun ConfigScreen(
                             if (putRes.isSuccess) {
                                 session.setDeviceId(devId)
                                 phase = HandshakePhase.Ready
+                                bleManager.setHandshakeOk(true)
+//                                handshakeOk = true;
                                 statusText = "Successfully connected to device ($devId). You can configure it."
                             } else {
                                 phase = HandshakePhase.Error
+                                bleManager.setHandshakeOk(false)
+//                                handshakeOk = false;
                                 statusText = "Update failed: ${putRes.exceptionOrNull()?.toUserMessage() ?: "unknown error"}"
                             }
                         }
@@ -220,6 +254,8 @@ fun ConfigScreen(
                 } else {
                     val e = getRes.exceptionOrNull()
                     phase = HandshakePhase.Error
+                    bleManager.setHandshakeOk(false)
+//                    handshakeOk = false;
                     statusText = "Server check failed: ${e?.toUserMessage() ?: "unknown error"}"
                 }
 
@@ -232,8 +268,8 @@ fun ConfigScreen(
         }
     }
 
-    val handshakeReady = phase == HandshakePhase.Ready
-    val buttonsEnabled = handshakeReady && !busy
+
+    val buttonsEnabled = handshakeOk && !busy
 
     // UI fields
     var ssid by remember { mutableStateOf("") }
@@ -275,7 +311,7 @@ fun ConfigScreen(
                         Text("Saved deviceId: $savedDeviceId")
                     }
 
-                    if (!handshakeReady) {
+                    if (!handshakeOk) {
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "You can't configure device until you fully connect to it.",
