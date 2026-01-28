@@ -7,9 +7,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.margo.app_iot.network.ApiClient
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.abs
+
 
 /**
  * ✅ Пациент: read-only, показываем референсы.
@@ -26,8 +34,9 @@ fun ExperimentDetailsReadOnlyCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            val header = if (doctorId.isNullOrBlank()) "You have no doctor yet" else "Comment from doctor $doctorId"
             Text(
-                text = "Comment from doctor ${doctorId ?: "—"}",
+                text = header,
                 style = MaterialTheme.typography.titleSmall
             )
             if (onRefresh != null) {
@@ -35,7 +44,7 @@ fun ExperimentDetailsReadOnlyCard(
             }
         }
 
-        val commentText = comment?.takeIf { it.isNotBlank() } ?: "—"
+        val commentText = comment?.takeIf { it.isNotBlank() } ?: "There's no comment yet"
         AssistChip(onClick = {}, label = { Text(commentText) })
 
         Spacer(Modifier.height(2.dp))
@@ -58,6 +67,8 @@ fun ExperimentDetailsEditorCard(
     onRefresh: (() -> Unit)? = null
 ) {
     var draft by rememberSaveable(initialComment) { mutableStateOf(initialComment.orEmpty()) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -73,8 +84,13 @@ fun ExperimentDetailsEditorCard(
                 if (onRefresh != null) {
                     TextButton(onClick = onRefresh) { Text("Refresh") }
                 }
-                Button(onClick = { onSave(draft) }) { Text("Save") }
+                Button(onClick = {
+                    focusManager.clearFocus(force = true)
+                    keyboard?.hide()
+                    onSave(draft)
+                }) { Text("Save") }
             }
+
         }
 
         OutlinedTextField(
@@ -133,8 +149,8 @@ fun MetricsTable(
         MetricRow("pelvis_roll_rom", metrics.pelvis_roll_rom, ref = refs["pelvis_roll_rom"].takeIf { showReferences })
 
         // даты — без refs
-        MetricRow("created_at", metrics.created_at, ref = null)
-        MetricRow("commented_at", metrics.commented_at, ref = null)
+        MetricRow("created_at", formatIsoTs(metrics.created_at) ?: "—", ref = null)
+        MetricRow("commented_at", formatIsoTs(metrics.commented_at) ?: "No comment yet", ref = null)
     }
 }
 
@@ -168,6 +184,21 @@ private fun flag(value: Double?, ref: RefRange?): MetricFlag {
     ref.max?.let { if (value > it) return MetricFlag.HIGH }
     return MetricFlag.OK
 }
+
+private val DISPLAY_TS: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm:ss", Locale.ENGLISH)
+        .withZone(ZoneId.systemDefault())
+
+private fun formatIsoTs(iso: String?): String? {
+    if (iso.isNullOrBlank()) return null
+
+    val instant = runCatching { Instant.parse(iso) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(iso).toInstant() }.getOrNull()
+        ?: return iso // если вдруг прилетело что-то нестандартное — покажем как есть
+
+    return DISPLAY_TS.format(instant)
+}
+
 
 @Composable
 private fun MetricRow(

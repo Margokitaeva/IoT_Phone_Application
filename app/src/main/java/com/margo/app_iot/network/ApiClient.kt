@@ -387,15 +387,15 @@ class ApiClient(
                             symmetry_index = it.optDoubleOrNull("symmetry_index"),
                             pelvis_pitch_rom = it.optDoubleOrNull("pelvis_pitch_rom"),
                             pelvis_roll_rom = it.optDoubleOrNull("pelvis_roll_rom"),
-                            created_at = it.optString("created_at").ifBlank { null },
-                            commented_at = it.optString("commented_at").ifBlank { null }
+                            created_at = it.optStringOrNull("created_at"),
+                            commented_at = it.optStringOrNull("commented_at")
                         )
                     }
 
                     ExperimentInfoResponse(
                         experimentId = json.getString("experimentId"),
                         userId = json.getString("userId"),
-                        comment = json.optString("comment").ifBlank { null },
+                        comment = json.optStringOrNull("comment"),
                         metrics = metrics
                     )
                 }
@@ -463,6 +463,12 @@ class ApiClient(
     // helper: чтобы нормально обрабатывать null/отсутствие поля
     private fun JSONObject.optDoubleOrNull(key: String): Double? {
         return if (has(key) && !isNull(key)) optDouble(key) else null
+    }
+
+    private fun JSONObject.optStringOrNull(key: String): String? {
+        if (!has(key) || isNull(key)) return null
+        val s = optString(key, "").trim()
+        return if (s.isBlank() || s.equals("null", ignoreCase = true)) null else s
     }
 
     data class PatientDoctorResponse(val patientId: String, val doctorId: String)
@@ -590,7 +596,7 @@ class ApiClient(
                     val json = JSONObject(text)
                     SetCommentResponse(
                         experimentId = json.getString("experimentId"),
-                        comment = json.optString("comment").ifBlank { null }
+                        comment = json.optStringOrNull("comment")
                     )
                 }
             }
