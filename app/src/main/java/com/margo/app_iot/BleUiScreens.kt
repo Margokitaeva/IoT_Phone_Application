@@ -239,7 +239,7 @@ fun ConfigScreen(
     var ssid by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var experimentName by remember { mutableStateOf("") }
-    var isLedEnabled by remember { mutableStateOf(false) }
+//    var isLedEnabled by remember { mutableStateOf(false) }
     var samplingMs by remember { mutableStateOf("") }
 
     LazyColumn(modifier = modifier.padding(16.dp)) {
@@ -321,19 +321,19 @@ fun ConfigScreen(
             Text("Device Config", style = MaterialTheme.typography.titleLarge)
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("LED enabled")
-                Switch(
-                    checked = isLedEnabled,
-                    onCheckedChange = { isLedEnabled = it },
-                    enabled = buttonsEnabled
-                )
-            }
-        }
+//        item {
+//            Row(
+//                modifier = Modifier.fillMaxWidth(),
+//                horizontalArrangement = Arrangement.SpaceBetween
+//            ) {
+//                Text("LED enabled")
+//                Switch(
+//                    checked = isLedEnabled,
+//                    onCheckedChange = { isLedEnabled = it },
+//                    enabled = buttonsEnabled
+//                )
+//            }
+//        }
 
         item {
             OutlinedTextField(
@@ -358,9 +358,11 @@ fun ConfigScreen(
                 onClick = {
                     onApplyConfig(
                         linkedMapOf(
-                            "isLedEnabled" to if (isLedEnabled) "1" else "0",
-                            "experimentName" to experimentName,
-                            "samplingMs" to samplingMs
+//                            "isLedEnabled" to if (isLedEnabled) "1" else "0",
+                            "samplingMs" to samplingMs,
+                            "experimentName" to experimentName
+
+
                         )
                     )
                 },

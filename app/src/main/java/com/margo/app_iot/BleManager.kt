@@ -41,7 +41,7 @@ class BleManager(
 
     // ===== Config =====
     private val CONFIG_SERVICE_UUID = shortUuid(0xFFF4)
-    private val LED_ENABLE_CHAR_UUID = shortUuid(0xFF12)
+//    private val LED_ENABLE_CHAR_UUID = shortUuid(0xFF12)
     private val EXP_NAME_CHAR_UUID      = shortUuid(0xFFF5)
     private val SAMPLING_MS_CHAR_UUID      = shortUuid(0xFFF6)
     private val CONFIG_APPLY_CHAR_UUID = shortUuid(0xFFF7)
@@ -110,24 +110,44 @@ class BleManager(
         }
     }
 
-    fun disconnectAndClose() {
-        // Остановить сканирование (если шло)
-        stopScan()
+//    fun disconnectAndClose() {
+//        // Остановить сканирование (если шло)
+//        stopScan()
+//
+//        // Сбросить буферы/коллбеки чтобы ничего не прилетало в UI после logout
+//        clearCallbacks()
+//        jsonRxBuffer.clear()
+//
+//        // Разорвать gatt
+//        try {
+//            gatt?.disconnect()
+//        } catch (_: Exception) {}
+//
+//        try {
+//            gatt?.close()
+//        } catch (_: Exception) {}
+//
+//        gatt = null
+//    }
 
-        // Сбросить буферы/коллбеки чтобы ничего не прилетало в UI после logout
+    fun disconnectAndClose() {
+        // 1) остановить скан
+        try { stopScan() } catch (_: Exception) {}
+
+        // 2) отрубить выдачу в UI
         clearCallbacks()
+
+        // 3) очистить RX буфер (лучше под локом, если есть конкурентный доступ)
+//        synchronized(rxLock) {
+//            jsonRxBuffer.clear()
+//        }
         jsonRxBuffer.clear()
 
-        // Разорвать gatt
-        try {
-            gatt?.disconnect()
-        } catch (_: Exception) {}
-
-        try {
-            gatt?.close()
-        } catch (_: Exception) {}
-
+        // 4) корректно прибить gatt
+        val g = gatt
         gatt = null
+        try { g?.disconnect() } catch (_: Exception) {}
+        try { g?.close() } catch (_: Exception) {}
     }
 
     fun clearCallbacks() {
@@ -214,7 +234,7 @@ class BleManager(
         val service = g.getService(CONFIG_SERVICE_UUID) ?: return
 
         val uuidMap = mapOf(
-            "isLedEnabled" to LED_ENABLE_CHAR_UUID,
+//            "isLedEnabled" to LED_ENABLE_CHAR_UUID,
             "experimentName" to EXP_NAME_CHAR_UUID,
             "samplingMs" to SAMPLING_MS_CHAR_UUID
         )
@@ -230,6 +250,7 @@ class BleManager(
 
         // config apply
         val applyCh = service.getCharacteristic(CONFIG_APPLY_CHAR_UUID) ?: return
+        Log.d("CFG", "apply props=${applyCh.properties} writeType=${applyCh.writeType}")
         writeQueue.enqueue(applyCh, byteArrayOf(1))
 
         writeQueue.start(g)
@@ -324,7 +345,7 @@ class BleManager(
     }
 
 
-
+    private var hadWriteError = false;
 
 
     // ===== GATT CALLBACK =====
@@ -369,8 +390,12 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic,
             status: Int
         ) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                hadWriteError = true
+                Log.e("WRITE_E", "WRITE FAILED uuid=${characteristic.uuid} status=$status")
+            }
 
+            Log.d("CFG", "onCharWrite uuid=${characteristic.uuid} status=$status")
             writeQueue.onWriteComplete(gatt)
 
             if (!writeQueue.isBusy()) {
