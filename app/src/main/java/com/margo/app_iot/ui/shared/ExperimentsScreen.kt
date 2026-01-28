@@ -110,15 +110,47 @@ fun ExperimentsScreen(
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
+//        Row(
+//            Modifier.fillMaxWidth(),
+//            horizontalArrangement = Arrangement.SpaceBetween
+//        ) {
+//            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+//                if (onBack != null) {
+//                    TextButton(onClick = onBack) { Text("Back") }
+//                }
+//                Text(title, style = MaterialTheme.typography.headlineSmall)
+//            }
+//
+//            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+//                Button(onClick = { refreshExperiments() }, enabled = !loadingList) {
+//                    if (loadingList) {
+//                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+//                        Spacer(Modifier.width(8.dp))
+//                    }
+//                    Text("Refresh list")
+//                }
+//
+//                OutlinedButton(
+//                    onClick = {
+//                        val expId = expandedExpId
+//                        if (expId != null) loadInfo(expId, force = true)
+//                    },
+//                    enabled = expandedExpId != null && loadingInfoId == null
+//                ) { Text("Refresh info") }
+//            }
+//        }
+//
+//        Spacer(Modifier.height(12.dp))
+
+        // ===== header line 1: Back + Refresh list + Refresh info (one line)
         Row(
-            Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (onBack != null) {
-                    TextButton(onClick = onBack) { Text("Back") }
-                }
-                Text(title, style = MaterialTheme.typography.headlineSmall)
+            if (onBack != null) {
+                TextButton(onClick = onBack) { Text("Back") }
+            } else {
+                Spacer(Modifier.width(1.dp))
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -140,7 +172,15 @@ fun ExperimentsScreen(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        // ===== header line 2: title
+        Spacer(Modifier.height(6.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+
+        // меньше воздуха — список выше
+        Spacer(Modifier.height(15.dp))
+
+
+
 
         if (listError != null) {
             Text(listError!!, color = MaterialTheme.colorScheme.error)
