@@ -73,4 +73,14 @@ class SessionStore(private val context: Context) {
         }
     }
 
+    suspend fun setSession(username: String, role: String, access: String, refresh: String) {
+        context.sessionDataStore.edit {
+            it[Keys.LOGGED_IN] = true
+            it[Keys.USERNAME] = username
+            it[Keys.ROLE] = role
+            it[Keys.ACCESS_TOKEN] = access
+            it[Keys.REFRESH_TOKEN] = refresh
+        }
+    }
+
 }

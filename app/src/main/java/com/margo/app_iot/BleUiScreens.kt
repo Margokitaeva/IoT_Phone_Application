@@ -156,34 +156,75 @@ fun ConfigScreen(
 //            busy = false
 //        }
 //    }
-
-    // при заходе на экран — включаем notify и ждём deviceId
-    LaunchedEffect(isConnected) {
-        if (isConnected) {
-            // новый коннект => handshake всегда заново
-//            bleManager.setHandshakeOk(false)
-//            handshakeOk = false
+    LaunchedEffect(handshakeOk, savedDeviceId) {
+        if (handshakeOk) {
+            phase = HandshakePhase.Ready
             busy = false
-            lastEspDeviceId = null
-            phase = HandshakePhase.WaitingForNotify
-
             statusText =
                 if (savedDeviceId.isNotBlank())
-                    "Saved deviceId: $savedDeviceId\nWaiting for confirmation from device… (press the button on device)"
+                    "Successfully connected to device ($savedDeviceId). You can configure it."
                 else
-                    "Waiting for confirmation from device… (press the button on device)"
+                    "Successfully connected to device. You can configure it."
+        }
+    }
 
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            busy = false
+            lastEspDeviceId = null
+
+            // включать notify можно всегда
             bleManager.enableDeviceIdNotifications()
+
+            // но UI-статус НЕ сбрасываем, если handshake уже готов
+            if (!handshakeOk) {
+                phase = HandshakePhase.WaitingForNotify
+                statusText =
+                    if (savedDeviceId.isNotBlank())
+                        "Saved deviceId: $savedDeviceId\nWaiting for confirmation from device… (press the button on device)"
+                    else
+                        "Waiting for confirmation from device… (press the button on device)"
+            } else {
+                phase = HandshakePhase.Ready
+                statusText = "Successfully connected to device ($savedDeviceId). You can configure it."
+            }
         } else {
-            // если отвалились — тоже сброс
-//            handshakeOk = false
-//            bleManager.setHandshakeOk(false)
             busy = false
             lastEspDeviceId = null
             phase = HandshakePhase.WaitingForNotify
             statusText = "Connect BLE device first (in BLE tab)"
         }
     }
+
+
+
+    // при заходе на экран — включаем notify и ждём deviceId
+//    LaunchedEffect(isConnected) {
+//        if (isConnected) {
+//            // новый коннект => handshake всегда заново
+////            bleManager.setHandshakeOk(false)
+////            handshakeOk = false
+//            busy = false
+//            lastEspDeviceId = null
+//            phase = HandshakePhase.WaitingForNotify
+//
+//            statusText =
+//                if (savedDeviceId.isNotBlank())
+//                    "Saved deviceId: $savedDeviceId\nWaiting for confirmation from device… (press the button on device)"
+//                else
+//                    "Waiting for confirmation from device… (press the button on device)"
+//
+//            bleManager.enableDeviceIdNotifications()
+//        } else {
+//            // если отвалились — тоже сброс
+////            handshakeOk = false
+////            bleManager.setHandshakeOk(false)
+//            busy = false
+//            lastEspDeviceId = null
+//            phase = HandshakePhase.WaitingForNotify
+//            statusText = "Connect BLE device first (in BLE tab)"
+//        }
+//    }
 
 
     // слушаем deviceId notify (handshake живёт тут!)

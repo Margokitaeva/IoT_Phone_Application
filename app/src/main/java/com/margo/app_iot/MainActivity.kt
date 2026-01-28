@@ -85,30 +85,34 @@ class MainActivity : ComponentActivity() {
 
                 val scope = rememberCoroutineScope()
 
-                val lifecycleOwner = LocalLifecycleOwner.current
+                ///
 
-                // чтобы observer всегда видел актуальное loggedIn/auth
-                val latestLoggedIn by rememberUpdatedState(loggedIn)
-                val latestAuth by rememberUpdatedState(auth)
+//                val lifecycleOwner = LocalLifecycleOwner.current
+//
+//                // чтобы observer всегда видел актуальное loggedIn/auth
+//                val latestLoggedIn by rememberUpdatedState(loggedIn)
+//                val latestAuth by rememberUpdatedState(auth)
+//
+//                DisposableEffect(lifecycleOwner) {
+//                    val observer = LifecycleEventObserver { _, event ->
+//                        if (event == Lifecycle.Event.ON_STOP) {
+//                            scope.launch {
+//                                // 1) всегда рвём BLE (даже если уже разлогинились)
+//                                bleManager.disconnectAndClose()
+//
+//                                // 2) logout только если реально залогинен
+//                                if (latestLoggedIn) {
+//                                    latestAuth.logout() // внутри он чистит session.logout()
+//                                }
+//                            }
+//                        }
+//                    }
+//
+//                    lifecycleOwner.lifecycle.addObserver(observer)
+//                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+//                }
 
-                DisposableEffect(lifecycleOwner) {
-                    val observer = LifecycleEventObserver { _, event ->
-                        if (event == Lifecycle.Event.ON_STOP) {
-                            scope.launch {
-                                // 1) всегда рвём BLE (даже если уже разлогинились)
-                                bleManager.disconnectAndClose()
-
-                                // 2) logout только если реально залогинен
-                                if (latestLoggedIn) {
-                                    latestAuth.logout() // внутри он чистит session.logout()
-                                }
-                            }
-                        }
-                    }
-
-                    lifecycleOwner.lifecycle.addObserver(observer)
-                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-                }
+                ///
 
 
                 if (!loggedIn) {

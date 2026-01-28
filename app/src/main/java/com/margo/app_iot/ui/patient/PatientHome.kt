@@ -452,7 +452,7 @@ fun PatientExperiments3DTab(
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("3D / Experiment data", style = MaterialTheme.typography.headlineSmall)
+        Text("3D COMING SOON...", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -480,8 +480,6 @@ fun PatientExperiments3DTab(
             Spacer(Modifier.height(10.dp))
             Text(listError!!, color = MaterialTheme.colorScheme.error)
         }
-
-        Spacer(Modifier.height(14.dp))
 
         Text("Select experiment:", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(8.dp))

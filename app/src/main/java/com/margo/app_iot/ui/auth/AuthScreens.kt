@@ -77,8 +77,9 @@ private fun LoginScreen(
 
                     if (res.isSuccess) {
                         val payload = res.getOrNull()!!
-                        session.setLoggedIn(payload.user.userId, payload.user.role)
-                        session.setTokens(payload.accessToken, payload.refreshToken)
+//                        session.setLoggedIn(payload.user.userId, payload.user.role)
+//                        session.setTokens(payload.accessToken, payload.refreshToken)
+                        session.setSession(payload.user.userId, payload.user.role, payload.accessToken, payload.refreshToken)
                         session.setDeviceId("") // deviceId через BLE handshake
                         onAuthed()
                     } else {
