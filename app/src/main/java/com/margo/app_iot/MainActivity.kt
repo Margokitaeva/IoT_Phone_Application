@@ -36,7 +36,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.ACCESS_FINE_LOCATION
+
             )
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -73,7 +75,7 @@ class MainActivity : ComponentActivity() {
                 val session = remember { SessionStore(this) }
 
                 // TODO: ВСТАВЬ СВОЙ URL СЕРВЕРА
-                val api = remember { ApiClient(baseUrl = "http://10.24.107.28:3000") }
+                val api = remember { ApiClient(baseUrl = "http://10.68.255.28:3000") }
 
                 // ВАЖНО: один общий репозиторий, который делает refresh/retry
                 val auth = remember { AuthRepository(api = api, session = session) }
