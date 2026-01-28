@@ -84,6 +84,7 @@ private fun DoctorPatientsList(
 
     var showAddDialog by remember { mutableStateOf(false) }
     var newPatientId by remember { mutableStateOf("") }
+    var addPatientError by remember { mutableStateOf<String?>(null) }
 
     var confirmDeletePatient by remember { mutableStateOf<String?>(null) }
     var deleteError by remember { mutableStateOf<String?>(null) }
@@ -181,8 +182,10 @@ private fun DoctorPatientsList(
             text = {
                 OutlinedTextField(
                     value = newPatientId,
-                    onValueChange = { newPatientId = it },
+                    onValueChange = { newPatientId = it; addPatientError = null },
                     label = { Text("PatientId") },
+                    isError = addPatientError != null,
+                    supportingText = { if (addPatientError != null) Text(addPatientError!!) },
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -191,11 +194,11 @@ private fun DoctorPatientsList(
                     onClick = {
                         val patientId = newPatientId.trim()
                         if (patientId.isBlank()) {
-                            error = "PatientId is empty"
+                            addPatientError = "PatientId is empty"
                             return@TextButton
                         }
                         scope.launch {
-                            error = null
+                            addPatientError = null
                             val res = auth.call { token ->
                                 api.addPatientToDoctor(
                                     doctorId = doctorId,
@@ -208,7 +211,7 @@ private fun DoctorPatientsList(
                                 newPatientId = ""
                                 refresh()
                             } else {
-                                error = res.exceptionOrNull()?.toUserMessage() ?: "Failed to add patient"
+                                addPatientError = res.exceptionOrNull()?.toUserMessage() ?: "Failed to add patient"
                             }
                         }
                     }

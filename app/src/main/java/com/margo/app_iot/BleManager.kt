@@ -137,9 +137,35 @@ class BleManager(
 //        gatt = null
 //    }
 
+    fun disconnect() {
+        val g = gatt
+        gatt = null
+
+        onDisconnected()
+
+        try { g?.disconnect() } catch (_: Exception) {}
+        try { g?.close() } catch (_: Exception) {}
+
+//        try {
+//            g?.disconnect()
+//        } catch (t: Throwable) {
+//            Log.w("BleManager", "gatt.disconnect() failed", t)
+//        }
+//
+//        try {
+//            g?.close()
+//        } catch (t: Throwable) {
+//            Log.w("BleManager", "gatt.close() failed", t)
+//        }
+
+        // НЕ вызываем clearCallbacks() — пусть UI получит onDisconnected,
+        // либо ты сам сбросишь isConnected/handshakeOk в UI-стейте.
+    }
+
     fun disconnectAndClose() {
         // 1) остановить скан
         try { stopScan() } catch (_: Exception) {}
+        onDisconnected()
 
         // 2) отрубить выдачу в UI
         clearCallbacks()

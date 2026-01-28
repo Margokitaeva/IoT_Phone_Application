@@ -257,7 +257,12 @@ fun PatientBleTab(
             devices = devices,
             onDeviceSelected = onConnect,
             isConnected = isConnected,
-            connectedDeviceName = connectedDeviceName
+            connectedDeviceName = connectedDeviceName,
+            onDisconnect = {
+                // как при logout
+                bleManager.setHandshakeOk(false)
+                bleManager.disconnect()
+            }
         )
 
         Spacer(Modifier.height(12.dp))
