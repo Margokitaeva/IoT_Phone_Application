@@ -126,31 +126,78 @@ fun MetricsTable(
     // Референсы (для gait-метрик). Можешь поправить диапазоны под свою методику.
     val refs = remember {
         mapOf(
-            "hip_rom_left" to RefRange(42.0, 53.0, "°"),
-            "hip_rom_right" to RefRange(42.0, 53.0, "°"),
-            "knee_rom_left" to RefRange(56.0, 61.0, "°"),
-            "knee_rom_right" to RefRange(56.0, 61.0, "°"),
-            "cadence_est" to RefRange(90.0, 120.0, " spm"),
+            "hip_rom_left" to RefRange(30.0, 45.0, "°"),
+            "hip_rom_right" to RefRange(30.0, 45.0, "°"),
+            "knee_rom_left" to RefRange(40.0, 60.0, "°"),
+            "knee_rom_right" to RefRange(40.0, 60.0, "°"),
+            "cadence_est" to RefRange(80.0, 120.0, " spm"),
             // если у тебя symmetry_index — % асимметрии (0 = идеально)
-            "symmetry_index" to RefRange(0.0, 10.0, " %"),
+            "symmetry_index" to RefRange(0.0, 0.1, " %"),
             "pelvis_pitch_rom" to RefRange(1.0, 2.0, "°"),
             "pelvis_roll_rom" to RefRange(6.0, 11.0, "°"),
         )
     }
 
+//    val titles = remember {
+//        mapOf(
+//            "hip_rom_left" to "Hip ROM (Left)",
+//            "hip_rom_right" to "Hip ROM (Right)",
+//            "knee_rom_left" to "Knee ROM (Left)",
+//            "knee_rom_right" to "Knee ROM (Right)",
+//            "cadence_est" to "Cadence",
+//            "symmetry_index" to "Symmetry index",
+//            "pelvis_pitch_rom" to "Pelvic tilt ROM",
+//            "pelvis_roll_rom" to "Pelvic obliquity ROM",
+//            "created_at" to "Created at",
+//            "commented_at" to "Commented at",
+//        )
+//    }
+
+    val titles = remember {
+        mapOf(
+            "hip_rom_left" to "Left hip movement range",
+            "hip_rom_right" to "Right hip movement range",
+
+            "knee_rom_left" to "Left knee movement range",
+            "knee_rom_right" to "Right knee movement range",
+
+            "cadence_est" to "Step rate (cadence)",
+            "symmetry_index" to "Movement symmetry",
+
+            "pelvis_pitch_rom" to "Pelvic forward/back tilt range",
+            "pelvis_roll_rom" to "Pelvic side tilt range",
+
+            "created_at" to "Created at",
+            "commented_at" to "Commented at"
+        )
+    }
+
+
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        MetricRow("hip_rom_left", metrics.hip_rom_left, ref = refs["hip_rom_left"].takeIf { showReferences })
-        MetricRow("hip_rom_right", metrics.hip_rom_right, ref = refs["hip_rom_right"].takeIf { showReferences })
-        MetricRow("knee_rom_left", metrics.knee_rom_left, ref = refs["knee_rom_left"].takeIf { showReferences })
-        MetricRow("knee_rom_right", metrics.knee_rom_right, ref = refs["knee_rom_right"].takeIf { showReferences })
-        MetricRow("cadence_est", metrics.cadence_est, ref = refs["cadence_est"].takeIf { showReferences })
-        MetricRow("symmetry_index", metrics.symmetry_index, ref = refs["symmetry_index"].takeIf { showReferences })
-        MetricRow("pelvis_pitch_rom", metrics.pelvis_pitch_rom, ref = refs["pelvis_pitch_rom"].takeIf { showReferences })
-        MetricRow("pelvis_roll_rom", metrics.pelvis_roll_rom, ref = refs["pelvis_roll_rom"].takeIf { showReferences })
+        MetricRow(keyName = "hip_rom_left", title = titles["hip_rom_left"], value = metrics.hip_rom_left, ref = refs["hip_rom_left"].takeIf { showReferences })
+        MetricRow(keyName = "hip_rom_right", title = titles["hip_rom_right"], value = metrics.hip_rom_right, ref = refs["hip_rom_right"].takeIf { showReferences })
+        MetricRow(keyName = "knee_rom_left", title = titles["knee_rom_left"], value = metrics.knee_rom_left, ref = refs["knee_rom_left"].takeIf { showReferences })
+        MetricRow(keyName = "knee_rom_right", title = titles["knee_rom_right"], value = metrics.knee_rom_right, ref = refs["knee_rom_right"].takeIf { showReferences })
+        MetricRow(keyName = "cadence_est", title = titles["cadence_est"], value = metrics.cadence_est, ref = refs["cadence_est"].takeIf { showReferences })
+        MetricRow(keyName = "symmetry_index", title = titles["symmetry_index"], value = metrics.symmetry_index, ref = refs["symmetry_index"].takeIf { showReferences })
+        MetricRow(keyName = "pelvis_pitch_rom", title = titles["pelvis_pitch_rom"], value = metrics.pelvis_pitch_rom, ref = refs["pelvis_pitch_rom"].takeIf { showReferences })
+        MetricRow(keyName = "pelvis_roll_rom", title = titles["pelvis_roll_rom"], value = metrics.pelvis_roll_rom, ref = refs["pelvis_roll_rom"].takeIf { showReferences })
+        MetricRow(keyName = "created_at", title = titles["created_at"], value = formatIsoTs(metrics.created_at) ?: "—", ref = null)
+        MetricRow(keyName = "commented_at", title = titles["commented_at"], value = formatIsoTs(metrics.commented_at) ?: "No comment yet", ref = null)
+
+//        MetricRow("hip_rom_left", metrics.hip_rom_left, ref = refs["hip_rom_left"].takeIf { showReferences })
+//        MetricRow("hip_rom_right", metrics.hip_rom_right, ref = refs["hip_rom_right"].takeIf { showReferences })
+//        MetricRow("knee_rom_left", metrics.knee_rom_left, ref = refs["knee_rom_left"].takeIf { showReferences })
+//        MetricRow("knee_rom_right", metrics.knee_rom_right, ref = refs["knee_rom_right"].takeIf { showReferences })
+//        MetricRow("cadence_est", metrics.cadence_est, ref = refs["cadence_est"].takeIf { showReferences })
+//        MetricRow("symmetry_index", metrics.symmetry_index, ref = refs["symmetry_index"].takeIf { showReferences })
+//        MetricRow("pelvis_pitch_rom", metrics.pelvis_pitch_rom, ref = refs["pelvis_pitch_rom"].takeIf { showReferences })
+//        MetricRow("pelvis_roll_rom", metrics.pelvis_roll_rom, ref = refs["pelvis_roll_rom"].takeIf { showReferences })
 
         // даты — без refs
-        MetricRow("created_at", formatIsoTs(metrics.created_at) ?: "—", ref = null)
-        MetricRow("commented_at", formatIsoTs(metrics.commented_at) ?: "No comment yet", ref = null)
+//        MetricRow("created_at", formatIsoTs(metrics.created_at) ?: "—", ref = null)
+//        MetricRow("commented_at", formatIsoTs(metrics.commented_at) ?: "No comment yet", ref = null)
     }
 }
 
@@ -202,7 +249,8 @@ private fun formatIsoTs(iso: String?): String? {
 
 @Composable
 private fun MetricRow(
-    label: String,
+    keyName: String,
+    title: String?,
     value: Any?,
     ref: RefRange?
 ) {
@@ -213,8 +261,22 @@ private fun MetricRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
+        // LEFT: short title + small variable name
+        Column {
+            Text(
+                text = title ?: keyName,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (!title.isNullOrBlank()) {
+                Text(
+                    text = keyName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
+        // RIGHT: value + status + ref
         Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
             val valueText = when (value) {
                 null -> "—"
@@ -222,7 +284,7 @@ private fun MetricRow(
                 is Number -> {
                     val d = value.toDouble()
                     val r = d.toInt().toDouble()
-                    if (abs(d - r) < 1e-9) d.toInt().toString() else String.format("%.2f", d)
+                    if (kotlin.math.abs(d - r) < 1e-9) d.toInt().toString() else String.format("%.2f", d)
                 }
                 else -> value.toString()
             }
@@ -237,10 +299,7 @@ private fun MetricRow(
                         MetricFlag.HIGH -> "HIGH"
                         MetricFlag.NA -> ""
                     }
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(chipLabel) }
-                    )
+                    AssistChip(onClick = {}, label = { Text(chipLabel) })
                 }
             }
 
@@ -255,3 +314,4 @@ private fun MetricRow(
         }
     }
 }
+
